@@ -135,6 +135,8 @@ The system auto-detects language from OS/browser locale (e.g., `zh-CN` → simpl
 - UI strings (buttons, labels) in `dictionary.ts`
 - Localized names for agents, music kits (from `data/localNames.ts`)
 
+Language state is a module-level store in `src/i18n/index.ts` consumed via `useSyncExternalStore` — calling `setLanguage()` re-renders every component using `useT()` immediately. English keys in `keys.ts` are the source of truth; every other locale is a partial override that falls back to English. When adding UI strings, always add the key to `keys.ts` AND translations to all 5 locale blocks in `dictionary.ts` — never hardcode display strings in components.
+
 The plugin has English-only names in C#, but the panel translates on the frontend.
 
 ### Static Data
@@ -156,11 +158,16 @@ The plugin has English-only names in C#, but the panel translates on the fronten
 | `App.tsx` | Main component, tab routing, loadout state management |
 | `components/TabNavigation.tsx` | Tab switcher (Weapons, Knives, Gloves, Agents, Music, Settings) |
 | `components/SettingsPanel.tsx` | CS2 path, language selection, deploy addon |
-| `components/WeaponPanel.tsx` | Weapon skin, sticker, and keychain picker |
-| `components/KnifePanel.tsx` | Knife type and skin selection |
-| `components/GlovePanel.tsx` | Glove type, paint, and per-team config |
+| `components/WeaponPanel.tsx` | Weapon grid; clicking a weapon opens `WeaponEditorModal` |
+| `components/KnifePanel.tsx` | Knife type grid per team; clicking opens `KnifeEditorModal` |
+| `components/GlovePanel.tsx` | Glove type grid per team; clicking opens `GloveEditorModal` |
 | `components/AgentPanel.tsx` | Agent model selection |
 | `components/MusicKitPanel.tsx` | Music kit selection |
+| `components/ui/Modal.tsx` | Shared modal shell (ESC/backdrop close, title bar, footer) — all dialogs build on it |
+| `components/ui/PickerGrid.tsx` | Searchable paginated item grid used by all pickers (skins, stickers, keychains) |
+| `components/editors/WeaponEditorModal.tsx` | Full-size weapon editor: tabs for skin / stickers / keychain / details (nametag + StatTrak) |
+| `components/editors/KnifeEditorModal.tsx` | Full-size knife skin editor (per team, wear/seed) |
+| `components/editors/GloveEditorModal.tsx` | Full-size glove paint editor (per team, wear/seed) |
 | `lib/api.ts` | Tauri invocations (file I/O, CS2 path resolution, addon deployment) |
 | `data/` | Static mappings: weapons, skins, knives, agents, stickers, keychains |
 
@@ -169,6 +176,8 @@ The plugin has English-only names in C#, but the panel translates on the fronten
 | File | Purpose |
 |------|---------|
 | `lib.rs` | File I/O: read/write `player_loadout.json`, resolve CS2 path, deploy addon files |
+
+Note: `save_loadout`/`load_loadout` pass the loadout through as untyped `serde_json::Value` on purpose — the Rust layer only persists the file. The data model lives in `Panel/src/utils/types.ts` (writer) and `Models/PlayerLoadout.cs` (reader); do NOT reintroduce a typed Rust mirror of the loadout.
 
 ### Plugin (addons/counterstrikesharp/plugins/PlayerSkinMod/)
 
@@ -202,16 +211,16 @@ The plugin has English-only names in C#, but the panel translates on the fronten
 
 ### Adding Weapon Cosmetics (Stickers, Keychains)
 
-1. **Stickers** (4 slots per weapon):
+1. **Stickers** (5 slots per weapon):
    - Add to `Panel/src/data/stickers.ts` with image URL
-   - `WeaponPanel.tsx` handles selection UI automatically
-   - Stored in `player_loadout.json` as `weaponStickers: { [defindex]: [id1, id2, id3, id4] }`
+   - `WeaponEditorModal.tsx` (Stickers tab) handles selection UI automatically
+   - Stored in `player_loadout.json` as `weaponStickers: { [defindex]: [{id, offsetX, offsetY, wear, scale, rotation}, ...] }`
    - Plugin applies via CounterStrikeSharp's sticker API
 
 2. **Keychains** (1 per weapon):
    - Add to `Panel/src/data/keychains.ts` with name, image, and localization
-   - `WeaponPanel.tsx` handles selection UI automatically
-   - Stored in `player_loadout.json` as `weaponKeychains: { [defindex]: id }`
+   - `WeaponEditorModal.tsx` (Keychain tab) handles selection UI automatically
+   - Stored in `player_loadout.json` as `weaponKeychains: { [defindex]: {id, offsetX, offsetY, offsetZ, seed} }`
    - Plugin applies via keychain entity spawning
 
 ### Testing Panel Changes
@@ -247,6 +256,10 @@ The plugin exposes the following console commands (accessible in-game via the co
 
 ## Common Gotchas
 
+### Music Kit IDs Are Real IDs, Not Indexes
+
+`loadout.musicKit` stores the actual in-game MusicKitID (e.g. 3 = Crimson Assault), matching `Panel/src/data/skins.ts` `musicKits[].id`. The plugin's `StaticData.KitIds` array is only a pool for random selection — never index into it with `loadout.MusicKit` (that bug shipped once and played the wrong kits).
+
 ### Language Code Mapping
 
 Frontend uses these internal codes that differ from standard locale codes:
@@ -279,14 +292,15 @@ The panel writes `player_loadout.json` via Rust's `std::fs` (UTF-8). The plugin 
 
 Releases are automated via GitHub Actions:
 
-1. Push a tag: `git tag v1.5.16 && git push --tags`
-2. CI builds Panel and plugin for Windows, Linux, macOS
-3. Artifacts are uploaded and a GitHub Release is created with release notes
-4. Files are automatically versioned in the release (e.g., `CS2-Skin-Mod_1.5.16_x64-setup.exe`)
+1. Update `RELEASE_NOTES.md` at the repo root — the release job publishes it verbatim as the GitHub Release body (`body_path` in `build.yml`)
+2. Push a tag: `git tag v1.8.0 && git push --tags`
+3. CI builds Panel and plugin for Windows, Linux, macOS
+4. Artifacts are uploaded and a GitHub Release is created with the notes from `RELEASE_NOTES.md`
+5. Files are automatically versioned in the release (e.g., `CS2-Skin-Mod_1.8.0_x64-setup.exe`)
 
 The version must be updated in these places before tagging (keep them identical):
 - `Panel/package.json` → `version`
-- `Panel/src-tauri/Cargo.toml` → `version`
+- `Panel/src-tauri/Cargo.toml` → `version` (then run `cargo check` to refresh `Cargo.lock`)
 - `Panel/src-tauri/tauri.conf.json` → `version`
 - `addons/counterstrikesharp/plugins/PlayerSkinMod/PlayerSkinMod.json` → `Version`
 - `addons/counterstrikesharp/plugins/PlayerSkinMod/PlayerSkinModPlugin.cs` → `ModuleVersion`

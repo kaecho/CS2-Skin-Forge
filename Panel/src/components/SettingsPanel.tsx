@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useT } from "../i18n";
 import { api, type AppConfig, type PluginCheckResult } from "../lib/api";
+import Modal from "./ui/Modal";
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -98,20 +99,26 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="card w-full max-w-md mx-4 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white">{t("settings.title")}</h2>
+    <Modal
+      size="md"
+      title={t("settings.title")}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">
+            {t("btn.cancel")}
+          </button>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-primary flex-1"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            {saving ? t("common.loading") : t("btn.save")}
           </button>
         </div>
-
+      }
+    >
+      <div className="space-y-6">
         {/* Language Selection */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-300">
@@ -184,14 +191,14 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
         {/* Plugin Status */}
         {pluginStatus && (
           <div className="space-y-1.5 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.06]">
-            <p className="text-xs font-medium text-gray-400">Plugin Status</p>
+            <p className="text-xs font-medium text-gray-400">{t("settings.pluginStatus")}</p>
             <div className="flex items-center gap-2 text-xs">
               <span className={pluginStatus.counterstrikesharpInstalled ? "text-green-400" : "text-red-400"}>
                 {pluginStatus.counterstrikesharpInstalled ? "✓" : "✗"}
               </span>
               <span className="text-gray-300">CounterStrikeSharp</span>
               <span className="text-gray-500">
-                {pluginStatus.counterstrikesharpInstalled ? "(installed)" : "(not installed — auto-deployed on click)"}
+                ({pluginStatus.counterstrikesharpInstalled ? t("settings.installed") : t("settings.notInstalled")})
               </span>
             </div>
             <div className="flex items-center gap-2 text-xs">
@@ -203,29 +210,15 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
                 {pluginStatus.allPresent
                   ? `(v${pluginStatus.deployedVersion || "?"})`
                   : pluginStatus.missingFiles.length > 0
-                    ? `(missing: ${pluginStatus.missingFiles.join(", ")})`
+                    ? `(${t("settings.missingFiles", { files: pluginStatus.missingFiles.join(", ") })})`
                     : pluginStatus.versionMismatch
-                      ? "(version mismatch — redeploy)"
-                      : "(unknown)"}
+                      ? `(${t("settings.versionMismatchShort")})`
+                      : `(${t("common.unknown")})`}
               </span>
             </div>
           </div>
         )}
-
-        {/* Actions */}
-        <div className="flex gap-3 pt-2">
-          <button onClick={onClose} className="btn-secondary flex-1">
-            {t("btn.cancel")}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-primary flex-1"
-          >
-            {saving ? t("common.loading") : t("btn.save")}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

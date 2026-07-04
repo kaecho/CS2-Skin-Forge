@@ -172,52 +172,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: CS2-Skin-Mod ${{ github.ref_name }}
-          body: |
-            # CS2-Skin-Mod ${{ github.ref_name }}
-
-            A local-only skin customization plugin for Counter-Strike 2.
-
-            ## What's New in v1.7.0
-
-            - StatTrak kill counter increments in real-time during matches
-            - Sticker position controls: adjust offset, scale, rotation, and wear per slot
-            - Keychain position controls: adjust offset X/Y/Z and seed
-            - Skin picker modal: full-size popup with search for browsing skins
-            - Auto-deploy CounterStrikeSharp: panel downloads and installs CSSharp if missing
-            - Loading states and code quality improvements
-
-            ## Installation
-
-            1. Download and install the panel app for your platform
-            2. Launch the panel, set your CS2 path in Settings
-            3. Click "Deploy Addons" to install the plugin to your CS2 directory
-            4. Add `-insecure` to CS2 launch options
-            5. Customize your loadout and click "Apply Loadout"!
-
-            See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for detailed instructions.
-
-            ---
-
-            # 中文说明
-
-            ## v1.7.0 更新内容
-
-            - StatTrak 击杀计数现在会在对局中实时增加
-            - 贴纸位置调整: 可调整每个槽位的偏移、缩放、旋转和磨损
-            - 挂件位置调整: 可调整挂件的 X/Y/Z 偏移和种子值
-            - 皮肤选择弹窗: 点击武器后弹出大窗口浏览皮肤，支持搜索
-            - 自动部署 CounterStrikeSharp: 面板自动下载安装 CSSharp
-            - 加载状态和代码质量改进
-
-            ## 安装说明
-
-            1. 下载并安装适合您平台的面板应用
-            2. 启动面板，在设置中设置 CS2 路径
-            3. 点击"部署插件"将插件安装到 CS2 目录
-            4. 在 CS2 启动选项中添加 `-insecure`
-            5. 自定义你的装备，点击"应用装备"即可!
-
-            详细说明请查看 [中文文档](https://github.com/${{ github.repository }}/blob/main/README_CN.md)。
+          # Release notes are maintained in RELEASE_NOTES.md — update it
+          # before tagging (see CLAUDE.md "Release Process").
+          body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
           overwrite_files: true

@@ -1,74 +1,73 @@
 import { useState } from 'react';
 import { Loadout, Team } from '../utils/types';
 import { gloves, getGloveTypeImage } from '../data/skins';
-import { getGloveLocalizedName, getGlovePaintLocalizedName } from '../data/localNames';
+import { getGloveLocalizedName } from '../data/localNames';
 import { useT } from '../i18n';
 import TeamToggle from './TeamToggle';
-import WearSeedControls from './WearSeedControls';
-import SkinPickerModal from './SkinPickerModal';
+import GloveEditorModal from './editors/GloveEditorModal';
 
 interface GlovePanelProps {
   loadout: Loadout;
   updateLoadout: (updates: Partial<Loadout>) => void;
 }
 
+/**
+ * Glove overview: pick a glove type per team. Clicking a glove selects it
+ * for the active team (validating the paint kit) and opens the editor modal.
+ */
 export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) {
   const { t, lang } = useT();
-  const [selectedTeam, setSelectedTeam] = useState<Team>('ct');
-  const [selectedGlove, setSelectedGlove] = useState<number | null>(() => {
-    const idx = loadout.gloveIndexCt;
-    return idx >= 0 ? idx : null;
-  });
-  const [showSkinModal, setShowSkinModal] = useState(false);
+  const [team, setTeam] = useState<Team>('ct');
+  const [editorOpen, setEditorOpen] = useState(false);
 
-  const getIndexField = () => selectedTeam === 'ct' ? 'gloveIndexCt' : 'gloveIndexT';
-  const getPaintField = () => selectedTeam === 'ct' ? 'glovePaintCt' : 'glovePaintT';
-  const getWearField = () => selectedTeam === 'ct' ? 'gloveWearCt' : 'gloveWearT';
-  const getSeedField = () => selectedTeam === 'ct' ? 'gloveSeedCt' : 'gloveSeedT';
+  const indexKey = team === 'ct' ? 'gloveIndexCt' : 'gloveIndexT';
+  const currentIndex = loadout[indexKey];
 
-  const currentPaint = selectedTeam === 'ct' ? loadout.glovePaintCt : loadout.glovePaintT;
-  const currentWear = selectedTeam === 'ct' ? loadout.gloveWearCt : loadout.gloveWearT;
-  const currentSeed = selectedTeam === 'ct' ? loadout.gloveSeedCt : loadout.gloveSeedT;
-
-  const handleGloveSelect = (index: number) => {
-    setSelectedGlove(index);
-    const glove = gloves[index];
-    // Validate: if current paint is not valid for this glove type, reset to first valid paint
-    const validPaintIds = glove.paints.map(p => p.id);
-    const isPaintValid = validPaintIds.includes(currentPaint);
-    const newPaint = isPaintValid ? currentPaint : glove.paints[0].id;
-
-    updateLoadout({
-      [getIndexField()]: index,
-      [getPaintField()]: newPaint,
-      ...(selectedTeam === 'ct'
-        ? { gloveDefIndexCt: glove.defindex }
-        : { gloveDefIndexT: glove.defindex }),
-      useRandom: false,
-    } as any);
+  /** Pick a paint for a glove type: keep the given paint if valid for the
+   *  type, otherwise use the type's first paint. Gloves must never have an
+   *  unset/mismatched paint — wrong paint kits distort the textures. */
+  const validPaintFor = (gloveIdx: number, paint: number): number => {
+    const glove = gloves[gloveIdx];
+    if (!glove) return -1;
+    return glove.paints.some(p => p.id === paint) ? paint : glove.paints[0].id;
   };
 
-  const handlePaintSelect = (paintId: number) => {
-    const glove = gloves[selectedGlove!];
-    updateLoadout({
-      [getPaintField()]: paintId,
-      ...(selectedTeam === 'ct'
-        ? { gloveDefIndexCt: glove.defindex }
-        : { gloveDefIndexT: glove.defindex }),
-      useRandom: false,
-    } as any);
+  const handleGloveClick = (index: number) => {
+    if (currentIndex !== index) {
+      const glove = gloves[index];
+      const curPaint = team === 'ct' ? loadout.glovePaintCt : loadout.glovePaintT;
+      const newPaint = validPaintFor(index, curPaint);
+      updateLoadout({
+        [indexKey]: index,
+        ...(team === 'ct'
+          ? { glovePaintCt: newPaint, gloveDefIndexCt: glove.defindex }
+          : { glovePaintT: newPaint, gloveDefIndexT: glove.defindex }),
+        useRandom: false,
+      } as Partial<Loadout>);
+    }
+    setEditorOpen(true);
   };
 
-  const handleWearChange = (wear: number) => {
-    updateLoadout({ [getWearField()]: wear } as any);
-  };
-
-  const handleSeedChange = (seed: number) => {
-    updateLoadout({ [getSeedField()]: seed } as any);
+  /** Team switch inside the editor: carry the viewed glove type over to the
+   *  new team so the modal keeps editing the same glove. */
+  const handleModalTeamChange = (newTeam: Team) => {
+    const newIndexKey = newTeam === 'ct' ? 'gloveIndexCt' : 'gloveIndexT';
+    if (loadout[newIndexKey] !== currentIndex) {
+      const glove = gloves[currentIndex];
+      const otherPaint = newTeam === 'ct' ? loadout.glovePaintCt : loadout.glovePaintT;
+      const newPaint = validPaintFor(currentIndex, otherPaint);
+      updateLoadout({
+        [newIndexKey]: currentIndex,
+        ...(newTeam === 'ct'
+          ? { glovePaintCt: newPaint, gloveDefIndexCt: glove.defindex }
+          : { glovePaintT: newPaint, gloveDefIndexT: glove.defindex }),
+        useRandom: false,
+      } as Partial<Loadout>);
+    }
+    setTeam(newTeam);
   };
 
   const handleRandom = () => {
-    setSelectedGlove(null);
     updateLoadout({
       gloveIndexCt: -1, glovePaintCt: -1,
       gloveIndexT: -1, glovePaintT: -1,
@@ -76,38 +75,25 @@ export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) 
     });
   };
 
-  // Find glove names for both teams (localized)
   const getGloveName = (idx: number) => {
     if (idx < 0 || idx >= gloves.length) return t("preview.random");
     return getGloveLocalizedName(gloves[idx].defindex, gloves[idx].name, lang);
   };
 
-  const selectedCtName = getGloveName(loadout.gloveIndexCt);
-  const selectedTName = getGloveName(loadout.gloveIndexT);
-
   return (
     <div className="space-y-3">
       {/* Team toggle */}
-      <TeamToggle
-        team={selectedTeam}
-        onChange={(team) => {
-          setSelectedTeam(team);
-          const idx = team === 'ct' ? loadout.gloveIndexCt : loadout.gloveIndexT;
-          setSelectedGlove(idx >= 0 ? idx : null);
-        }}
-        ctLabel={t("glove.ct")}
-        tLabel={t("glove.t")}
-      />
+      <TeamToggle team={team} onChange={setTeam} ctLabel={t("glove.ct")} tLabel={t("glove.t")} />
 
       {/* Current selections for both teams */}
       <div className="flex gap-2 text-xs">
         <div className="flex-1 rounded-lg bg-black/20 border border-white/[0.06] px-3 py-2">
           <span className="text-sky-400 font-semibold">{t("glove.ct")}:</span>{' '}
-          <span className="text-gray-200">{selectedCtName}</span>
+          <span className="text-gray-200">{getGloveName(loadout.gloveIndexCt)}</span>
         </div>
         <div className="flex-1 rounded-lg bg-black/20 border border-white/[0.06] px-3 py-2">
           <span className="text-orange-400 font-semibold">{t("glove.t")}:</span>{' '}
-          <span className="text-gray-200">{selectedTName}</span>
+          <span className="text-gray-200">{getGloveName(loadout.gloveIndexT)}</span>
         </div>
       </div>
 
@@ -125,8 +111,8 @@ export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) 
         {gloves.map((glove, index) => (
           <button
             key={glove.defindex}
-            onClick={() => handleGloveSelect(index)}
-            className={`card card-hover !p-3 text-left ${selectedGlove === index ? 'card-selected' : ''}`}
+            onClick={() => handleGloveClick(index)}
+            className={`card card-hover !p-3 text-left ${currentIndex === index ? 'card-selected' : ''}`}
           >
             <div className="flex items-center space-x-2">
               <img
@@ -146,74 +132,15 @@ export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) 
         ))}
       </div>
 
-      {selectedGlove !== null && (
-        <div className="card">
-          <h3 className="text-sm font-semibold text-white mb-3">
-            {getGloveLocalizedName(gloves[selectedGlove].defindex, gloves[selectedGlove].name, lang)} - {t("glove.selectPaint")}
-            <span className={`ml-2 text-[11px] font-bold ${selectedTeam === 'ct' ? 'text-sky-400' : 'text-orange-400'}`}>
-              {selectedTeam === 'ct' ? t('team.ct') : t('team.t')}
-            </span>
-          </h3>
-
-          {/* Wear + Seed controls (with manual input) */}
-          <div className="mb-4">
-            <WearSeedControls
-              wear={currentWear}
-              seed={currentSeed}
-              onWearChange={handleWearChange}
-              onSeedChange={handleSeedChange}
-            />
-          </div>
-
-          {/* Selected paint preview + Choose Skin button */}
-          <div className="mb-4">
-            {currentPaint >= 0 ? (
-              <div className="flex items-center gap-3 p-2.5 bg-amber-500/[0.08] rounded-lg border border-amber-500/20">
-                {(() => {
-                  const paint = gloves[selectedGlove].paints.find(p => p.id === currentPaint);
-                  return (
-                    <>
-                      {paint?.image && (
-                        <img src={paint.image} alt={paint.name}
-                          className="w-14 h-14 object-contain rounded"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold text-amber-200 truncate">
-                          {getGlovePaintLocalizedName(gloves[selectedGlove].defindex, currentPaint, paint?.name || `Paint #${currentPaint}`, lang)}
-                        </div>
-                        <div className="text-[10px] text-amber-400/60">Selected skin</div>
-                      </div>
-                    </>
-                  );
-                })()}
-                <button onClick={() => setShowSkinModal(true)}
-                  className="text-xs text-amber-300 hover:text-amber-100 px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 transition-colors shrink-0">
-                  Change
-                </button>
-              </div>
-            ) : (
-              <button onClick={() => setShowSkinModal(true)}
-                className="w-full py-3 text-sm text-gray-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg border border-dashed border-white/[0.1] hover:border-amber-500/30 transition-all">
-                + Choose Skin
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Skin Picker Modal */}
-      {showSkinModal && selectedGlove !== null && (
-        <SkinPickerModal
-          title={`${getGloveLocalizedName(gloves[selectedGlove].defindex, gloves[selectedGlove].name, lang)} - ${selectedTeam === 'ct' ? t('team.ct') : t('team.t')}`}
-          items={gloves[selectedGlove].paints.map(p => ({
-            id: p.id,
-            name: getGlovePaintLocalizedName(gloves[selectedGlove].defindex, p.id, p.name, lang),
-            image: p.image,
-          }))}
-          selectedId={currentPaint >= 0 ? currentPaint : null}
-          onSelect={(id) => { handlePaintSelect(id); setShowSkinModal(false); }}
-          onClose={() => setShowSkinModal(false)}
+      {/* Glove editor modal */}
+      {editorOpen && currentIndex >= 0 && (
+        <GloveEditorModal
+          gloveIndex={currentIndex}
+          team={team}
+          onTeamChange={handleModalTeamChange}
+          loadout={loadout}
+          updateLoadout={updateLoadout}
+          onClose={() => setEditorOpen(false)}
         />
       )}
     </div>

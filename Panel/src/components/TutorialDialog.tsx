@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useT, type I18nKey } from '../i18n';
+import Modal from './ui/Modal';
 
 interface TutorialDialogProps {
   isOpen: boolean;
@@ -29,15 +30,35 @@ export default function TutorialDialog({ isOpen, onClose }: TutorialDialogProps)
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="card w-full max-w-md mx-4 space-y-5 !p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">{t('tutorial.title')}</h2>
-          <button onClick={handleClose} className="btn-ghost !px-2 !py-1 text-xs">
-            {t('tutorial.skip')}
-          </button>
+    <Modal
+      size="sm"
+      title={t('tutorial.title')}
+      onClose={handleClose}
+      headerExtra={
+        <button onClick={handleClose} className="btn-ghost !px-2 !py-1 text-xs">
+          {t('tutorial.skip')}
+        </button>
+      }
+      footer={
+        <div className="flex gap-3">
+          {step > 0 && (
+            <button onClick={() => setStep(step - 1)} className="btn-secondary flex-1">
+              {t('tutorial.prev')}
+            </button>
+          )}
+          {isLast ? (
+            <button onClick={handleClose} className="btn-primary flex-1">
+              {t('tutorial.done')}
+            </button>
+          ) : (
+            <button onClick={() => setStep(step + 1)} className="btn-primary flex-1">
+              {t('tutorial.next')}
+            </button>
+          )}
         </div>
-
+      }
+    >
+      <div className="space-y-5">
         {/* Progress dots */}
         <div className="flex items-center gap-1.5">
           {STEPS.map((_, i) => (
@@ -65,24 +86,7 @@ export default function TutorialDialog({ isOpen, onClose }: TutorialDialogProps)
           </div>
           <p className="text-sm text-gray-300 leading-relaxed">{t(current.descKey)}</p>
         </div>
-
-        <div className="flex gap-3">
-          {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="btn-secondary flex-1">
-              {t('tutorial.prev')}
-            </button>
-          )}
-          {isLast ? (
-            <button onClick={handleClose} className="btn-primary flex-1">
-              {t('tutorial.done')}
-            </button>
-          ) : (
-            <button onClick={() => setStep(step + 1)} className="btn-primary flex-1">
-              {t('tutorial.next')}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -19,7 +19,7 @@ namespace PlayerSkinMod;
 public class PlayerSkinModPlugin : BasePlugin
 {
     public override string ModuleName        => "PlayerSkinMod";
-    public override string ModuleVersion     => "1.7.0";
+    public override string ModuleVersion     => "1.8.0";
     public override string ModuleAuthor      => "CS2-Skin-local-mod";
     public override string ModuleDescription => "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally";
 
@@ -29,8 +29,8 @@ public class PlayerSkinModPlugin : BasePlugin
 
     private bool _handling = false;
     private MemoryFunctionVoid<nint, string, float>? _setAttrByName;
-    private ulong _nextItemId = 0xF00DCAFE;
-    private bool _skinErrorLogged = false;
+    private FileSystemWatcher? _loadoutWatcher;
+    private long _lastReloadTicks;
 
     // Loadout file path - will be set in Load()
     private string _loadoutFilePath = "";
@@ -43,7 +43,6 @@ public class PlayerSkinModPlugin : BasePlugin
 
     public override void Load(bool hotReload)
     {
-        _skinErrorLogged = false;
         var loadedLegacy = LoadoutService.LoadLegacyPaints(ModuleDirectory, Logger);
         _legacyPaints.Clear();
         foreach (var p in loadedLegacy) _legacyPaints.Add(p);
@@ -61,28 +60,13 @@ public class PlayerSkinModPlugin : BasePlugin
         // Set up a file watcher to reload when the panel saves a new loadout
         try
         {
-            var watcher = new FileSystemWatcher(ModuleDirectory, "player_loadout.json")
+            _loadoutWatcher = new FileSystemWatcher(ModuleDirectory, "player_loadout.json")
             {
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime,
                 EnableRaisingEvents = true
             };
-            watcher.Changed += (sender, e) =>
-            {
-                // Small delay to ensure file is fully written
-                System.Threading.Thread.Sleep(100);
-                LoadoutService.LoadFromFile(_loadoutFilePath, _playerLoadouts, Logger);
-                _playerModels.Clear(); // Clear cached models so agent changes take effect
-                _playerGunPaints.Clear(); // Clear cached weapon paints so changes take effect
-                Logger.LogInformation("[PlayerSkinMod] Loadout file changed, reloaded");
-            };
-            watcher.Created += (sender, e) =>
-            {
-                System.Threading.Thread.Sleep(100);
-                LoadoutService.LoadFromFile(_loadoutFilePath, _playerLoadouts, Logger);
-                _playerModels.Clear(); // Clear cached models so agent changes take effect
-                _playerGunPaints.Clear(); // Clear cached weapon paints so changes take effect
-                Logger.LogInformation("[PlayerSkinMod] Loadout file created, loaded");
-            };
+            _loadoutWatcher.Changed += (_, _) => OnLoadoutFileChanged();
+            _loadoutWatcher.Created += (_, _) => OnLoadoutFileChanged();
         }
         catch (Exception ex)
         {
@@ -128,7 +112,35 @@ public class PlayerSkinModPlugin : BasePlugin
 
     public override void Unload(bool hotReload)
     {
+        _loadoutWatcher?.Dispose();
+        _loadoutWatcher = null;
         VirtualFunctions.GiveNamedItemFunc.Unhook(OnGiveNamedItemPost, HookMode.Post);
+    }
+
+    /// <summary>
+    /// Handle a change of player_loadout.json. Runs on a FileSystemWatcher
+    /// thread pool thread, so the actual reload is marshaled onto the game
+    /// thread via Server.NextFrame — _playerLoadouts is read by game event
+    /// handlers and must never be mutated concurrently.
+    /// </summary>
+    private void OnLoadoutFileChanged()
+    {
+        // FileSystemWatcher fires several events per save — debounce.
+        var nowTicks = DateTime.UtcNow.Ticks;
+        var last = System.Threading.Interlocked.Read(ref _lastReloadTicks);
+        if (nowTicks - last < TimeSpan.FromMilliseconds(200).Ticks) return;
+        System.Threading.Interlocked.Exchange(ref _lastReloadTicks, nowTicks);
+
+        // Small delay so the panel finishes writing the file.
+        System.Threading.Thread.Sleep(100);
+
+        Server.NextFrame(() =>
+        {
+            LoadoutService.LoadFromFile(_loadoutFilePath, _playerLoadouts, Logger);
+            _playerModels.Clear();    // Clear cached models so agent changes take effect
+            _playerGunPaints.Clear(); // Clear cached weapon paints so changes take effect
+            Logger.LogInformation("[PlayerSkinMod] Loadout file changed, reloaded");
+        });
     }
 
     // Command handlers
@@ -145,7 +157,7 @@ public class PlayerSkinModPlugin : BasePlugin
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 Loadout file: {_loadoutFilePath}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 File exists: {File.Exists(_loadoutFilePath)}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 Loaded loadouts: {_playerLoadouts.Count}");
-        player.PrintToChat($" \x04[PlayerSkinMod]\x01 Knife: {loadout.KnifeIndex}, GloveCT: {loadout.GloveIndexCt}, GloveT: {loadout.GloveIndexT}, AgentCT: {loadout.AgentModelCt}, AgentT: {loadout.AgentModelT}");
+        player.PrintToChat($" \x04[PlayerSkinMod]\x01 KnifeCT: {loadout.KnifeIndexCt}, KnifeT: {loadout.KnifeIndexT}, GloveCT: {loadout.GloveIndexCt}, GloveT: {loadout.GloveIndexT}, AgentCT: {loadout.AgentModelCt}, AgentT: {loadout.AgentModelT}, Music: {loadout.MusicKit}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 UseRandom: {loadout.UseRandom}, Weapons: {loadout.WeaponPaints.Count}, Keychains: {loadout.WeaponKeychains.Count}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 SetAttrByName: {_setAttrByName != null}");
         player.PrintToChat(" \x04[PlayerSkinMod]\x01 --- End Diagnostic ---");
@@ -177,6 +189,16 @@ public class PlayerSkinModPlugin : BasePlugin
         return loadout;
     }
 
+    /// <summary>
+    /// Resolve the music kit to apply. The panel stores the REAL MusicKitID
+    /// (e.g. 3 = Crimson Assault) in the loadout — do not treat it as an
+    /// index into KitIds. Unset (&lt;= 0) means pick a random kit.
+    /// </summary>
+    private int ResolveMusicKitId(PlayerLoadout loadout) =>
+        loadout.MusicKit > 0
+            ? loadout.MusicKit
+            : StaticData.KitIds[_rng.Next(StaticData.KitIds.Length)];
+
     [GameEventHandler]
     public HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
     {
@@ -196,7 +218,7 @@ public class PlayerSkinModPlugin : BasePlugin
             return HookResult.Continue;
 
         var loadout = GetOrCreateLoadout(player.Slot);
-        Logger.LogInformation($"[PlayerSkinMod] Player {player.Slot} spawned. Loadout: knife={loadout.KnifeIndex}, gloveCT={loadout.GloveIndexCt}, gloveT={loadout.GloveIndexT}, agentCT={loadout.AgentModelCt}, agentT={loadout.AgentModelT}, music={loadout.MusicKit}, random={loadout.UseRandom}, weapons={loadout.WeaponPaints.Count}, setAttrByName={_setAttrByName != null}");
+        Logger.LogInformation($"[PlayerSkinMod] Player {player.Slot} spawned. Loadout: knifeCT={loadout.KnifeIndexCt}, knifeT={loadout.KnifeIndexT}, gloveCT={loadout.GloveIndexCt}, gloveT={loadout.GloveIndexT}, agentCT={loadout.AgentModelCt}, agentT={loadout.AgentModelT}, music={loadout.MusicKit}, random={loadout.UseRandom}, weaponsCT={loadout.WeaponPaintsCt.Count}, weaponsT={loadout.WeaponPaintsT.Count}, setAttrByName={_setAttrByName != null}");
 
         bool isCT = (CsTeam)player.TeamNum == CsTeam.CounterTerrorist;
 
@@ -254,7 +276,7 @@ public class PlayerSkinModPlugin : BasePlugin
             _playerModels[player.Slot] = model;
         }
 
-        int kitId = loadout.MusicKit >= 0 ? StaticData.KitIds[Math.Min(loadout.MusicKit, StaticData.KitIds.Length - 1)] : StaticData.KitIds[_rng.Next(StaticData.KitIds.Length)];
+        int kitId = ResolveMusicKitId(loadout);
 
         // Per-team knife selection (v1.6.0+); legacy shared fields are mirrored
         // into the per-team fields by LoadoutService.
@@ -382,8 +404,8 @@ public class PlayerSkinModPlugin : BasePlugin
                 uint count = (uint)Math.Max(0, statTrak.Count);
                 weapon.FallbackStatTrak = (int)count;
                 Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
+                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", WeaponService.UIntToFloat(count));
+                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", WeaponService.UIntToFloat(count));
                 Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
             }
         }
@@ -521,135 +543,19 @@ public class PlayerSkinModPlugin : BasePlugin
         string? nametag = loadout.WeaponNametags.TryGetValue(defIndex, out string? nt) ? nt : null;
         StatTrakInfo? statTrak = loadout.WeaponStatTrak.TryGetValue(defIndex, out StatTrakInfo? st) ? st : null;
 
-        ApplySkinToWeaponInternal(weapon, defIndex, paint, seed, wear, steamId, nametag, statTrak);
+        // All skin/sticker/keychain application lives in WeaponService — the
+        // plugin only decides WHAT to apply, the service knows HOW.
+        WeaponService.ApplySkinToWeapon(
+            weapon, defIndex, paint, _legacyPaints, _setAttrByName,
+            seed, wear, (uint)steamId, nametag, statTrak, Logger);
 
         // Apply stickers if configured
         if (loadout.WeaponStickers.TryGetValue(defIndex, out var stickers) && stickers.Count > 0)
-            ApplyStickersInternal(weapon, stickers);
+            WeaponService.ApplyStickers(weapon, stickers, _setAttrByName);
 
         // Apply keychain if configured
         if (loadout.WeaponKeychains.TryGetValue(defIndex, out var keychain))
-            ApplyKeychainInternal(weapon, keychain);
-    }
-
-    private void ApplySkinToWeaponInternal(CEconEntity weapon, ushort defIndex, int paintKit, int seed = 0, float wear = 0.01f, ulong steamId = 0, string? nametag = null, StatTrakInfo? statTrak = null)
-    {
-        if (_setAttrByName == null) return;
-
-        try
-        {
-            var item = weapon.AttributeManager?.Item;
-            if (item == null) return;
-
-            item.AttributeList.Attributes.RemoveAll();
-            item.NetworkedDynamicAttributes.Attributes.RemoveAll();
-            AssignItemId(item);
-            if (steamId > 0) item.AccountID = (uint)steamId;
-
-            weapon.FallbackPaintKit = paintKit;
-            weapon.FallbackSeed = seed;
-            weapon.FallbackWear = wear;
-
-            // Mark fallback netvars dirty so they are (re)sent to clients.
-            // Without this, whether the client sees the skin depends on whether the
-            // initial entity snapshot happened to include these values — which is
-            // why skins would intermittently render as the default texture even
-            // though the inspect description showed the custom skin.
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
-
-            _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture prefab", paintKit);
-            _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture seed", (float)seed);
-            _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture wear", wear);
-
-            _setAttrByName.Invoke(item.AttributeList.Handle, "set item texture prefab", paintKit);
-            _setAttrByName.Invoke(item.AttributeList.Handle, "set item texture seed", (float)seed);
-            _setAttrByName.Invoke(item.AttributeList.Handle, "set item texture wear", wear);
-
-            // Apply nametag
-            if (!string.IsNullOrEmpty(nametag))
-            {
-                item.CustomName = nametag;
-            }
-
-            // Apply StatTrak. The kill count must be written as raw uint bits
-            // reinterpreted as float ("kill eater" attributes store integers in
-            // float storage). Passing a plain float here makes the client read
-            // garbage bits, which rendered as the capped 99999 display value.
-            if (statTrak != null && statTrak.Enabled)
-            {
-                uint count = (uint)Math.Max(0, statTrak.Count);
-                item.EntityQuality = 9; // StatTrak quality
-                weapon.FallbackStatTrak = (int)count;
-                Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", UIntToFloat(0));
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", UIntToFloat(0));
-            }
-
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
-
-            bool isLegacy = _legacyPaints.Contains((defIndex, paintKit));
-            weapon.AcceptInput("SetBodygroup", value: $"body,{(isLegacy ? 1 : 0)}");
-            Utilities.SetStateChanged(weapon, "CBaseModelEntity", "m_CBodyComponent");
-        }
-        catch (Exception ex)
-        {
-            if (!_skinErrorLogged)
-            {
-                _skinErrorLogged = true;
-                Logger.LogError($"[PlayerSkinMod] ApplySkinToWeapon failed: {ex.Message}");
-            }
-        }
-    }
-
-    private void ApplyStickersInternal(CBasePlayerWeapon weapon, List<StickerInfo> stickers)
-    {
-        if (_setAttrByName == null || stickers.Count == 0) return;
-        var item = weapon.AttributeManager?.Item;
-        if (item == null) return;
-
-        for (int i = 0; i < Math.Min(stickers.Count, 5); i++)
-        {
-            var s = stickers[i];
-            if (s.Id == 0) continue;
-            var handle = item.NetworkedDynamicAttributes.Handle;
-            _setAttrByName.Invoke(handle, $"sticker slot {i} id", UIntToFloat(s.Id));
-            if (s.OffsetX != 0 || s.OffsetY != 0)
-                _setAttrByName.Invoke(handle, $"sticker slot {i} schema", 0f);
-            _setAttrByName.Invoke(handle, $"sticker slot {i} offset x", s.OffsetX);
-            _setAttrByName.Invoke(handle, $"sticker slot {i} offset y", s.OffsetY);
-            _setAttrByName.Invoke(handle, $"sticker slot {i} wear", s.Wear);
-            _setAttrByName.Invoke(handle, $"sticker slot {i} scale", s.Scale);
-            _setAttrByName.Invoke(handle, $"sticker slot {i} rotation", s.Rotation);
-        }
-    }
-
-    private void ApplyKeychainInternal(CBasePlayerWeapon weapon, KeychainInfo keychain)
-    {
-        if (_setAttrByName == null || keychain.Id == 0) return;
-        var item = weapon.AttributeManager?.Item;
-        if (item == null) return;
-
-        var handle = item.NetworkedDynamicAttributes.Handle;
-        _setAttrByName.Invoke(handle, "keychain slot 0 id", UIntToFloat(keychain.Id));
-        _setAttrByName.Invoke(handle, "keychain slot 0 offset x", keychain.OffsetX);
-        _setAttrByName.Invoke(handle, "keychain slot 0 offset y", keychain.OffsetY);
-        _setAttrByName.Invoke(handle, "keychain slot 0 offset z", keychain.OffsetZ);
-        if (keychain.Seed > 0)
-            _setAttrByName.Invoke(handle, "keychain slot 0 seed", (float)keychain.Seed);
-    }
-
-    private static float UIntToFloat(uint value) => BitConverter.Int32BitsToSingle((int)value);
-
-    private void AssignItemId(CEconItemView item)
-    {
-        var id = unchecked(_nextItemId++);
-        item.ItemID = id;
-        item.ItemIDLow = (uint)(id & 0xFFFFFFFF);
-        item.ItemIDHigh = (uint)(id >> 32);
+            WeaponService.ApplyKeychains(weapon, keychain, _setAttrByName);
     }
 
     [GameEventHandler]
@@ -733,7 +639,7 @@ public class PlayerSkinModPlugin : BasePlugin
             return HookResult.Continue;
 
         var loadout = GetOrCreateLoadout(player.Slot);
-        int kitId = loadout.MusicKit >= 0 ? StaticData.KitIds[Math.Min(loadout.MusicKit, StaticData.KitIds.Length - 1)] : StaticData.KitIds[_rng.Next(StaticData.KitIds.Length)];
+        int kitId = ResolveMusicKitId(loadout);
 
         info.DontBroadcast = true;
         _handling = true;

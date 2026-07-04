@@ -13,6 +13,7 @@ import AboutDialog from './components/AboutDialog';
 import DisclaimerDialog from './components/DisclaimerDialog';
 import TutorialDialog from './components/TutorialDialog';
 import UpdateBanner from './components/UpdateBanner';
+import Modal from './components/ui/Modal';
 import { Loadout } from './utils/types';
 import { useT } from './i18n';
 import { api, type AppConfig, type PluginCheckResult, type UpdateCheckResult } from './lib/api';
@@ -301,19 +302,29 @@ function App() {
 
       {/* Plugin Warning Dialog */}
       {showPluginWarning && pluginCheckResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="card w-full max-w-md mx-4 space-y-4 !p-6">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
-              <h2 className="text-lg font-bold text-white">{t("setup.pluginWarning")}</h2>
+        <Modal
+          size="sm"
+          title={<><span className="text-xl">⚠️</span>{t("setup.pluginWarning")}</>}
+          onClose={handleDismissPluginWarning}
+          footer={
+            <div className="flex gap-3">
+              <button onClick={handleDismissPluginWarning} className="btn-secondary flex-1">
+                {t("setup.remindLater")}
+              </button>
+              <button onClick={handleDeployFromWarning} className="btn-primary flex-1">
+                {t("setup.deployNow")}
+              </button>
             </div>
+          }
+        >
+          <div className="space-y-3">
             <p className="text-sm text-gray-300">
               {pluginCheckResult.missingFiles.length > 0
                 ? t("status.pluginMissing")
                 : pluginCheckResult.versionMismatch
                   ? t("status.pluginVersionMismatch")
                   : !pluginCheckResult.counterstrikesharpInstalled
-                    ? "CounterStrikeSharp is not installed. Click 'Deploy Now' to auto-install it along with the plugin."
+                    ? t("setup.cssMissing")
                     : t("setup.pluginWarningMessage")}
             </p>
             {pluginCheckResult.missingFiles.length > 0 && (
@@ -328,24 +339,16 @@ function App() {
               <div className="text-xs text-amber-300 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg p-2.5">
                 {t("status.pluginVersionMismatch")}
                 <br />
-                Panel: v{pluginCheckResult.panelVersion} | Deployed: {pluginCheckResult.deployedVersion || t("common.error")}
+                Panel: v{pluginCheckResult.panelVersion} | Deployed: {pluginCheckResult.deployedVersion || t("common.unknown")}
               </div>
             )}
             {!pluginCheckResult.counterstrikesharpInstalled && (
               <div className="text-xs text-amber-300 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg p-2.5">
-                CounterStrikeSharp is not installed. The panel will automatically download and install it when you deploy addons.
+                {t("setup.cssAutoInstall")}
               </div>
             )}
-            <div className="flex gap-3 pt-1">
-              <button onClick={handleDismissPluginWarning} className="btn-secondary flex-1">
-                {t("setup.remindLater")}
-              </button>
-              <button onClick={handleDeployFromWarning} className="btn-primary flex-1">
-                {t("setup.deployNow")}
-              </button>
-            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

@@ -3,146 +3,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct StickerInfo {
-    pub id: u32,
-    #[serde(default, rename = "offsetX")]
-    pub offset_x: f32,
-    #[serde(default, rename = "offsetY")]
-    pub offset_y: f32,
-    #[serde(default)]
-    pub wear: f32,
-    #[serde(default = "default_scale")]
-    pub scale: f32,
-    #[serde(default)]
-    pub rotation: f32,
-}
-
-fn default_scale() -> f32 {
-    1.0
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct KeychainInfo {
-    pub id: u32,
-    #[serde(default, rename = "offsetX")]
-    pub offset_x: f32,
-    #[serde(default, rename = "offsetY")]
-    pub offset_y: f32,
-    #[serde(default, rename = "offsetZ")]
-    pub offset_z: f32,
-    #[serde(default)]
-    pub seed: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct StatTrakInfo {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub count: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Loadout {
-    #[serde(rename = "weaponPaints", default)]
-    pub weapon_paints: std::collections::HashMap<u16, i32>,
-    #[serde(rename = "weaponStickers", default)]
-    pub weapon_stickers: std::collections::HashMap<u16, Vec<StickerInfo>>,
-    #[serde(rename = "weaponWears", default)]
-    pub weapon_wears: std::collections::HashMap<u16, f32>,
-    #[serde(rename = "weaponSeeds", default)]
-    pub weapon_seeds: std::collections::HashMap<u16, i32>,
-    // Per-team weapon skins (v1.6.0+)
-    #[serde(rename = "weaponPaintsCt", default)]
-    pub weapon_paints_ct: std::collections::HashMap<u16, i32>,
-    #[serde(rename = "weaponWearsCt", default)]
-    pub weapon_wears_ct: std::collections::HashMap<u16, f32>,
-    #[serde(rename = "weaponSeedsCt", default)]
-    pub weapon_seeds_ct: std::collections::HashMap<u16, i32>,
-    #[serde(rename = "weaponPaintsT", default)]
-    pub weapon_paints_t: std::collections::HashMap<u16, i32>,
-    #[serde(rename = "weaponWearsT", default)]
-    pub weapon_wears_t: std::collections::HashMap<u16, f32>,
-    #[serde(rename = "weaponSeedsT", default)]
-    pub weapon_seeds_t: std::collections::HashMap<u16, i32>,
-    #[serde(rename = "weaponKeychains", default)]
-    pub weapon_keychains: std::collections::HashMap<u16, KeychainInfo>,
-    #[serde(rename = "weaponNametags", default)]
-    pub weapon_nametags: std::collections::HashMap<u16, String>,
-    #[serde(rename = "weaponStatTrak", default)]
-    pub weapon_stattrak: std::collections::HashMap<u16, StatTrakInfo>,
-    #[serde(rename = "knifeIndex", default = "default_glove")]
-    pub knife_index: i32,
-    #[serde(rename = "knifePaint", default = "default_glove")]
-    pub knife_paint: i32,
-    #[serde(rename = "knifeWear", default = "default_wear")]
-    pub knife_wear: f32,
-    #[serde(rename = "knifeSeed", default)]
-    pub knife_seed: i32,
-    // Per-team knives (v1.6.0+)
-    #[serde(rename = "knifeIndexCt", default = "default_glove")]
-    pub knife_index_ct: i32,
-    #[serde(rename = "knifePaintCt", default = "default_glove")]
-    pub knife_paint_ct: i32,
-    #[serde(rename = "knifeWearCt", default = "default_wear")]
-    pub knife_wear_ct: f32,
-    #[serde(rename = "knifeSeedCt", default)]
-    pub knife_seed_ct: i32,
-    #[serde(rename = "knifeIndexT", default = "default_glove")]
-    pub knife_index_t: i32,
-    #[serde(rename = "knifePaintT", default = "default_glove")]
-    pub knife_paint_t: i32,
-    #[serde(rename = "knifeWearT", default = "default_wear")]
-    pub knife_wear_t: f32,
-    #[serde(rename = "knifeSeedT", default)]
-    pub knife_seed_t: i32,
-    // Per-team gloves
-    #[serde(rename = "gloveIndexCt", default = "default_glove")]
-    pub glove_index_ct: i32,
-    #[serde(rename = "glovePaintCt", default = "default_glove")]
-    pub glove_paint_ct: i32,
-    #[serde(rename = "gloveWearCt", default = "default_wear")]
-    pub glove_wear_ct: f32,
-    #[serde(rename = "gloveSeedCt", default)]
-    pub glove_seed_ct: i32,
-    #[serde(rename = "gloveDefIndexCt", default)]
-    pub glove_defindex_ct: u16,
-    #[serde(rename = "gloveIndexT", default = "default_glove")]
-    pub glove_index_t: i32,
-    #[serde(rename = "glovePaintT", default = "default_glove")]
-    pub glove_paint_t: i32,
-    #[serde(rename = "gloveWearT", default = "default_wear")]
-    pub glove_wear_t: f32,
-    #[serde(rename = "gloveSeedT", default)]
-    pub glove_seed_t: i32,
-    #[serde(rename = "gloveDefIndexT", default)]
-    pub glove_defindex_t: u16,
-    #[serde(rename = "agentModelCt", default = "default_agent")]
-    pub agent_model_ct: i32,
-    #[serde(rename = "agentModelT", default = "default_agent")]
-    pub agent_model_t: i32,
-    #[serde(rename = "agentModelPathCt", default)]
-    pub agent_model_path_ct: String,
-    #[serde(rename = "agentModelPathT", default)]
-    pub agent_model_path_t: String,
-    #[serde(rename = "musicKit")]
-    pub music_kit: i32,
-    #[serde(rename = "useRandom")]
-    pub use_random: bool,
-}
-
-fn default_agent() -> i32 {
-    -1
-}
-
-fn default_glove() -> i32 {
-    -1
-}
-
-fn default_wear() -> f32 {
-    0.01
-}
+// NOTE: Loadout JSON is passed through save_loadout/load_loadout untyped
+// (serde_json::Value). The Rust layer only persists the file — the data
+// model lives in the frontend (utils/types.ts) and the plugin
+// (Models/PlayerLoadout.cs). Keeping Rust untyped means new loadout fields
+// never require a Rust change and partial/legacy files never fail to load.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -351,11 +216,6 @@ fn get_loadout_path_from_config() -> Option<PathBuf> {
     Some(path)
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to CS2 Skin Mod.", name)
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCheckResult {
@@ -447,19 +307,22 @@ fn save_config(config: AppConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn save_loadout(slot: u32, loadout: Loadout) -> Result<(), String> {
+fn save_loadout(slot: u32, loadout: serde_json::Value) -> Result<(), String> {
     let loadout_path = get_loadout_path_from_config()
         .ok_or_else(|| "CS2 path not configured. Please set it in Settings.".to_string())?;
 
-    // Read existing loadouts or create new map
-    let mut loadouts: std::collections::HashMap<u32, Loadout> = if loadout_path.exists() {
-        let data = fs::read_to_string(&loadout_path).map_err(|e| e.to_string())?;
-        serde_json::from_str(&data).unwrap_or_default()
+    // Read existing loadouts to preserve other slots; tolerate a missing or
+    // corrupt file by starting fresh.
+    let mut loadouts: serde_json::Map<String, serde_json::Value> = if loadout_path.exists() {
+        fs::read_to_string(&loadout_path)
+            .ok()
+            .and_then(|data| serde_json::from_str(&data).ok())
+            .unwrap_or_default()
     } else {
-        std::collections::HashMap::new()
+        Default::default()
     };
 
-    loadouts.insert(slot, loadout);
+    loadouts.insert(slot.to_string(), loadout);
 
     // Ensure the directory exists
     if let Some(parent) = loadout_path.parent() {
@@ -472,7 +335,7 @@ fn save_loadout(slot: u32, loadout: Loadout) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn load_loadout(slot: u32) -> Result<Option<Loadout>, String> {
+fn load_loadout(slot: u32) -> Result<Option<serde_json::Value>, String> {
     let loadout_path = match get_loadout_path_from_config() {
         Some(p) => p,
         None => return Ok(None),
@@ -483,42 +346,75 @@ fn load_loadout(slot: u32) -> Result<Option<Loadout>, String> {
     }
 
     let data = fs::read_to_string(&loadout_path).map_err(|e| e.to_string())?;
-    let loadouts: std::collections::HashMap<u32, Loadout> =
+    let loadouts: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(&data).map_err(|e| e.to_string())?;
-    Ok(loadouts.get(&slot).cloned())
+    Ok(loadouts.get(&slot.to_string()).cloned())
+}
+
+/// Default Steam installation roots per platform.
+fn steam_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if cfg!(target_os = "windows") {
+        for drive in ["C", "D", "E", "F"] {
+            roots.push(PathBuf::from(format!("{drive}:\\Program Files (x86)\\Steam")));
+            roots.push(PathBuf::from(format!("{drive}:\\Steam")));
+            roots.push(PathBuf::from(format!("{drive}:\\SteamLibrary")));
+        }
+    } else if cfg!(target_os = "macos") {
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join("Library/Application Support/Steam"));
+        }
+    } else {
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join(".steam/steam"));
+            roots.push(home.join(".local/share/Steam"));
+            // Flatpak Steam
+            roots.push(home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"));
+        }
+    }
+    roots
+}
+
+/// Extract additional library paths from Steam's libraryfolders.vdf
+/// ("path" entries). A naive line scan is enough for this format.
+fn parse_library_folders(vdf_path: &Path) -> Vec<PathBuf> {
+    let Ok(content) = fs::read_to_string(vdf_path) else {
+        return Vec::new();
+    };
+    let mut libs = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("\"path\"") {
+            let value = rest.trim().trim_matches('"');
+            if !value.is_empty() {
+                libs.push(PathBuf::from(value.replace("\\\\", "\\")));
+            }
+        }
+    }
+    libs
 }
 
 #[tauri::command]
 fn detect_cs2_path() -> Result<Option<String>, String> {
-    // Common CS2 installation paths
-    let candidates = if cfg!(target_os = "windows") {
-        vec![
-            "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo",
-            "D:\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo",
-            "D:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo",
-            "E:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo",
-        ]
-    } else {
-        vec![
-            "/home/.steam/steam/steamapps/common/Counter-Strike Global Offensive/game/csgo",
-            "~/.steam/steam/steamapps/common/Counter-Strike Global Offensive/game/csgo",
-            "~/.local/share/Steam/steamapps/common/Counter-Strike Global Offensive/game/csgo",
-        ]
-    };
+    // Collect candidate Steam libraries: the default roots plus every extra
+    // library registered in each root's libraryfolders.vdf.
+    let mut libraries: Vec<PathBuf> = Vec::new();
+    for root in steam_roots() {
+        for lib in parse_library_folders(&root.join("config").join("libraryfolders.vdf")) {
+            libraries.push(lib);
+        }
+        libraries.push(root);
+    }
 
-    for path in &candidates {
-        let expanded = if path.starts_with('~') {
-            if let Some(home) = dirs::home_dir() {
-                home.join(&path[2..])
-            } else {
-                continue;
-            }
-        } else {
-            PathBuf::from(path)
-        };
-
-        if expanded.exists() {
-            return Ok(Some(expanded.to_string_lossy().to_string()));
+    for lib in libraries {
+        let cs2 = lib
+            .join("steamapps")
+            .join("common")
+            .join("Counter-Strike Global Offensive")
+            .join("game")
+            .join("csgo");
+        if cs2.exists() {
+            return Ok(Some(cs2.to_string_lossy().to_string()));
         }
     }
 
@@ -737,7 +633,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_config,
             save_config,
             save_loadout,

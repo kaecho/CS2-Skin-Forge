@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { EN, type I18nKey } from "./keys";
 import { DICTS } from "./dictionary";
 
@@ -68,19 +68,34 @@ export const LANGUAGES = [
   { code: "russian", label: "Русский", flag: "RU" },
 ] as const;
 
-/** Hook returning a translator bound to the current language. */
-export function useT() {
-  const [lang, setLang] = useState<string>(getSavedLanguage);
+/** Hook returning a translator bound to the current language.
+ *
+ * Language state lives in a module-level store (not per-component state) so
+ * that changing the language re-renders every component that calls useT().
+ */
+let currentLang = getSavedLanguage();
+const listeners = new Set<() => void>();
 
-  const changeLanguage = useCallback((newLang: string) => {
-    setLang(newLang);
-    saveLanguage(newLang);
-  }, []);
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Change the app language globally and persist the preference. */
+export function setLanguage(lang: string): void {
+  if (lang === currentLang) return;
+  currentLang = lang;
+  saveLanguage(lang);
+  listeners.forEach((l) => l());
+}
+
+export function useT() {
+  const lang = useSyncExternalStore(subscribe, () => currentLang);
 
   const t = useCallback(
     (key: I18nKey, params?: TParams) => translate(lang, key, params),
     [lang]
   );
 
-  return { t, lang, changeLanguage, languages: LANGUAGES };
+  return { t, lang, changeLanguage: setLanguage, languages: LANGUAGES };
 }

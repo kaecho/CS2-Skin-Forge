@@ -3,6 +3,7 @@ import { useT } from "../i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../lib/api";
 import { useAppVersion } from "./Header";
+import Modal from "./ui/Modal";
 
 interface AboutDialogProps {
   isOpen: boolean;
@@ -56,17 +57,17 @@ export default function AboutDialog({ isOpen, onClose, onOpenTutorial }: AboutDi
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="card w-full max-w-md mx-4 space-y-4 !p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">{t("about.title")}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
+    <Modal
+      size="sm"
+      title={t("about.title")}
+      onClose={onClose}
+      footer={
+        <button onClick={onClose} className="btn-primary w-full">
+          {t("common.close")}
+        </button>
+      }
+    >
+      <div className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center">
             <svg className="w-6 h-6 text-black/80" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -135,11 +136,7 @@ export default function AboutDialog({ isOpen, onClose, onOpenTutorial }: AboutDi
             </button>
           ))}
         </div>
-
-        <button onClick={onClose} className="btn-primary w-full">
-          {t("common.close")}
-        </button>
       </div>
-    </div>
+    </Modal>
   );
 }

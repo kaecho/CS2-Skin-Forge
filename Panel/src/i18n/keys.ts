@@ -112,6 +112,57 @@ export const EN = {
   "common.error": "Error",
   "common.success": "Success",
   "common.close": "Close",
+  "common.done": "Done",
+  "common.change": "Change",
+  "common.loadMore": "Load More ({shown} / {total})",
+  "common.unknown": "unknown",
+
+  // Item editor modal (weapons / knives / gloves)
+  "picker.searchSkins": "Search skins...",
+  "picker.noResults": "No results found",
+  "picker.default": "Default (no skin)",
+  "picker.chooseSkin": "+ Choose Skin",
+  "picker.selectedSkin": "Selected skin",
+  "editor.tabSkin": "Skin",
+  "editor.tabStickers": "Stickers",
+  "editor.tabKeychain": "Keychain",
+  "editor.tabDetails": "Details",
+  "editor.resetItem": "Reset all",
+  "editor.noSkinSelected": "No skin selected",
+
+  // Sticker editor
+  "sticker.slot": "Slot {n}",
+  "sticker.empty": "Empty slot",
+  "sticker.searchPlaceholder": "Search stickers...",
+
+  // Keychain editor
+  "keychain.none": "No keychain equipped",
+  "keychain.searchPlaceholder": "Search keychains...",
+
+  // Position / appearance controls
+  "pos.title": "Position & Appearance",
+  "pos.offsetX": "Offset X",
+  "pos.offsetY": "Offset Y",
+  "pos.offsetZ": "Offset Z",
+  "pos.scale": "Scale",
+  "pos.rotation": "Rotation",
+  "pos.wear": "Wear",
+  "pos.seed": "Seed",
+  "wearseed.randomHint": "0 = random",
+
+  // Knife
+  "knife.noSkins": "No skins available for this knife yet.",
+
+  // Settings plugin status
+  "settings.pluginStatus": "Plugin Status",
+  "settings.installed": "installed",
+  "settings.notInstalled": "not installed — installed automatically on deploy",
+  "settings.missingFiles": "missing: {files}",
+  "settings.versionMismatchShort": "version mismatch — redeploy",
+
+  // Setup / CounterStrikeSharp
+  "setup.cssMissing": "CounterStrikeSharp is not installed. Click \"Deploy Now\" to install it automatically together with the plugin.",
+  "setup.cssAutoInstall": "CounterStrikeSharp is not installed. The panel will automatically download and install it when you deploy addons.",
 
   // About
   "about.title": "About",

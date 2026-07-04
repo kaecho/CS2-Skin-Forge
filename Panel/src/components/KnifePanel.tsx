@@ -4,40 +4,62 @@ import { knives, getKnifeImageUrl } from '../data/knives';
 import { knifeSkinsByType } from '../data/knifeSkins';
 import { useT } from '../i18n';
 import TeamToggle from './TeamToggle';
-import WearSeedControls from './WearSeedControls';
-import SkinPickerModal from './SkinPickerModal';
+import KnifeEditorModal from './editors/KnifeEditorModal';
 
 interface KnifePanelProps {
   loadout: Loadout;
   updateLoadout: (updates: Partial<Loadout>) => void;
 }
 
+/**
+ * Knife overview: pick a knife type per team. Clicking a knife selects it
+ * for the active team and opens the full-size skin editor modal.
+ */
 export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) {
   const { t, lang } = useT();
   const isChinese = lang === 'schinese' || lang === 'tchinese';
   const [team, setTeam] = useState<Team>('ct');
-  const [copied, setCopied] = useState(false);
-  const [showSkinModal, setShowSkinModal] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
-  // Per-team field accessors
   const indexKey = team === 'ct' ? 'knifeIndexCt' : 'knifeIndexT';
   const paintKey = team === 'ct' ? 'knifePaintCt' : 'knifePaintT';
-  const wearKey = team === 'ct' ? 'knifeWearCt' : 'knifeWearT';
-  const seedKey = team === 'ct' ? 'knifeSeedCt' : 'knifeSeedT';
   const currentIndex = loadout[indexKey];
-  const currentPaint = loadout[paintKey];
-  const currentWear = loadout[wearKey];
-  const currentSeed = loadout[seedKey];
 
-  const handleKnifeSelect = (index: number) => {
-    updateLoadout({
-      [indexKey]: index,
-      useRandom: false,
-    } as Partial<Loadout>);
+  const handleKnifeClick = (index: number) => {
+    if (currentIndex !== index) {
+      // Keep the current paint if the new knife also has it (e.g. Fade
+      // exists on most knives), otherwise fall back to random (-1).
+      const curPaint = loadout[paintKey];
+      const newDefindex = knives[index].defindex;
+      const paintStillValid =
+        curPaint >= 0 && (knifeSkinsByType[newDefindex] ?? []).some(s => s.id === curPaint);
+      updateLoadout({
+        [indexKey]: index,
+        [paintKey]: paintStillValid ? curPaint : -1,
+        useRandom: false,
+      } as Partial<Loadout>);
+    }
+    setEditorOpen(true);
   };
 
-  const handlePaintSelect = (paintId: number) => {
-    updateLoadout({ [paintKey]: paintId, useRandom: false } as Partial<Loadout>);
+  /** Team switch inside the editor: carry the viewed knife type over to the
+   *  new team so the modal keeps editing the same knife. */
+  const handleModalTeamChange = (newTeam: Team) => {
+    const newIndexKey = newTeam === 'ct' ? 'knifeIndexCt' : 'knifeIndexT';
+    const newPaintKey = newTeam === 'ct' ? 'knifePaintCt' : 'knifePaintT';
+    if (loadout[newIndexKey] !== currentIndex) {
+      const newDefindex = knives[currentIndex]?.defindex;
+      const otherPaint = loadout[newPaintKey];
+      const paintStillValid =
+        otherPaint >= 0 && newDefindex !== undefined &&
+        (knifeSkinsByType[newDefindex] ?? []).some(s => s.id === otherPaint);
+      updateLoadout({
+        [newIndexKey]: currentIndex,
+        [newPaintKey]: paintStillValid ? otherPaint : -1,
+        useRandom: false,
+      } as Partial<Loadout>);
+    }
+    setTeam(newTeam);
   };
 
   const handleRandom = () => {
@@ -48,33 +70,20 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
     });
   };
 
-  const handleWearChange = (wear: number) => {
-    updateLoadout({ [wearKey]: wear } as Partial<Loadout>);
-  };
-
-  const handleSeedChange = (seed: number) => {
-    updateLoadout({ [seedKey]: seed } as Partial<Loadout>);
-  };
-
-  /** Copy the active team's knife selection to the other team. */
-  const copyToOtherTeam = () => {
-    if (currentIndex < 0) return;
-    const updates: Partial<Loadout> = team === 'ct'
-      ? { knifeIndexT: currentIndex, knifePaintT: currentPaint, knifeWearT: currentWear, knifeSeedT: currentSeed }
-      : { knifeIndexCt: currentIndex, knifePaintCt: currentPaint, knifeWearCt: currentWear, knifeSeedCt: currentSeed };
-    updateLoadout(updates);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
   const getKnifeName = (idx: number) => {
     if (idx < 0 || idx >= knives.length) return t('preview.random');
     return isChinese ? knives[idx].nameZh : knives[idx].name;
   };
 
-  // Get the selected knife's defindex for looking up per-knife-type skins
-  const selectedKnifeDefindex = currentIndex >= 0 ? knives[currentIndex]?.defindex : null;
-  const skinsForSelectedKnife = selectedKnifeDefindex ? (knifeSkinsByType[selectedKnifeDefindex] || []) : [];
+  const getSelectedSkinName = (idx: number, paint: number): string | null => {
+    if (idx < 0 || paint < 0) return null;
+    const defindex = knives[idx]?.defindex;
+    const skin = defindex ? knifeSkinsByType[defindex]?.find(s => s.id === paint) : undefined;
+    return skin?.name ?? `#${paint}`;
+  };
+
+  const ctSkin = getSelectedSkinName(loadout.knifeIndexCt, loadout.knifePaintCt);
+  const tSkin = getSelectedSkinName(loadout.knifeIndexT, loadout.knifePaintT);
 
   return (
     <div className="space-y-3">
@@ -86,10 +95,12 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
         <div className="flex-1 rounded-lg bg-black/20 border border-white/[0.06] px-3 py-2">
           <span className="text-sky-400 font-semibold">{t('knife.ct')}:</span>{' '}
           <span className="text-gray-200">{getKnifeName(loadout.knifeIndexCt)}</span>
+          {ctSkin && <span className="text-amber-300/80"> · {ctSkin}</span>}
         </div>
         <div className="flex-1 rounded-lg bg-black/20 border border-white/[0.06] px-3 py-2">
           <span className="text-orange-400 font-semibold">{t('knife.t')}:</span>{' '}
           <span className="text-gray-200">{getKnifeName(loadout.knifeIndexT)}</span>
+          {tSkin && <span className="text-amber-300/80"> · {tSkin}</span>}
         </div>
       </div>
 
@@ -107,7 +118,7 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
         {knives.map((knife, index) => (
           <button
             key={knife.defindex}
-            onClick={() => handleKnifeSelect(index)}
+            onClick={() => handleKnifeClick(index)}
             className={`card card-hover !p-3 text-center ${currentIndex === index ? 'card-selected' : ''}`}
           >
             <img
@@ -121,76 +132,15 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
         ))}
       </div>
 
-      {currentIndex >= 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-3 gap-2">
-            <h3 className="text-sm font-semibold text-white truncate">
-              {getKnifeName(currentIndex)}
-              <span className={`ml-2 text-[11px] font-bold ${team === 'ct' ? 'text-sky-400' : 'text-orange-400'}`}>
-                {team === 'ct' ? t('team.ct') : t('team.t')}
-              </span>
-            </h3>
-            <button onClick={copyToOtherTeam}
-              className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded-md bg-white/[0.05] border border-white/[0.08] transition-colors shrink-0">
-              {copied ? t('team.copied') : (team === 'ct' ? t('team.copyToT') : t('team.copyToCt'))}
-            </button>
-          </div>
-
-          {/* Wear + Seed controls (with manual input) */}
-          <div className="mb-4">
-            <WearSeedControls
-              wear={currentWear}
-              seed={currentSeed}
-              onWearChange={handleWearChange}
-              onSeedChange={handleSeedChange}
-            />
-          </div>
-
-          {/* Selected skin preview + Choose Skin button */}
-          <div className="mb-4">
-            {currentPaint >= 0 ? (
-              <div className="flex items-center gap-3 p-2.5 bg-amber-500/[0.08] rounded-lg border border-amber-500/20">
-                {(() => {
-                  const paint = skinsForSelectedKnife.find(p => p.id === currentPaint);
-                  return (
-                    <>
-                      {paint?.image && (
-                        <img src={paint.image} alt={paint.name}
-                          className="w-14 h-14 object-contain rounded"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold text-amber-200 truncate">
-                          {paint?.name || `Paint #${currentPaint}`}
-                        </div>
-                        <div className="text-[10px] text-amber-400/60">Selected skin</div>
-                      </div>
-                    </>
-                  );
-                })()}
-                <button onClick={() => setShowSkinModal(true)}
-                  className="text-xs text-amber-300 hover:text-amber-100 px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 transition-colors shrink-0">
-                  Change
-                </button>
-              </div>
-            ) : (
-              <button onClick={() => setShowSkinModal(true)}
-                className="w-full py-3 text-sm text-gray-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg border border-dashed border-white/[0.1] hover:border-amber-500/30 transition-all">
-                + Choose Skin
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Skin Picker Modal */}
-      {showSkinModal && currentIndex >= 0 && (
-        <SkinPickerModal
-          title={`${getKnifeName(currentIndex)} - ${team === 'ct' ? t('team.ct') : t('team.t')}`}
-          items={skinsForSelectedKnife.map(p => ({ id: p.id, name: p.name, image: p.image }))}
-          selectedId={currentPaint >= 0 ? currentPaint : null}
-          onSelect={(id) => { handlePaintSelect(id); setShowSkinModal(false); }}
-          onClose={() => setShowSkinModal(false)}
+      {/* Knife editor modal */}
+      {editorOpen && currentIndex >= 0 && (
+        <KnifeEditorModal
+          knifeIndex={currentIndex}
+          team={team}
+          onTeamChange={handleModalTeamChange}
+          loadout={loadout}
+          updateLoadout={updateLoadout}
+          onClose={() => setEditorOpen(false)}
         />
       )}
     </div>

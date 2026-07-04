@@ -20,13 +20,6 @@ export interface StatTrakInfo {
   count: number;
 }
 
-export interface WeaponConfig {
-  paint: number;
-  stickers?: StickerInfo[];
-  wear?: number;
-  seed?: number;
-}
-
 export type Team = 'ct' | 't';
 
 export interface Loadout {

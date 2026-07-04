@@ -75,7 +75,7 @@ export default function WearSeedControls({ wear, seed, onWearChange, onSeedChang
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs text-gray-400">
-            {t('weapon.seed')} <span className="text-gray-600">(0 = random)</span>
+            {t('weapon.seed')} <span className="text-gray-600">({t('wearseed.randomHint')})</span>
           </label>
           <input
             type="number"

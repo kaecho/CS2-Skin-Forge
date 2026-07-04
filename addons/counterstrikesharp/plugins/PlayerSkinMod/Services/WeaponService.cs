@@ -1,6 +1,7 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
+using Microsoft.Extensions.Logging;
 using PlayerSkinMod.Data;
 using PlayerSkinMod.Models;
 
@@ -9,6 +10,7 @@ namespace PlayerSkinMod.Services;
 public static class WeaponService
 {
     private static ulong _nextItemId = 0xF00DCAFE;
+    private static bool _skinErrorLogged;
 
     public static CCSPlayerController? GetPlayerFromItemServices(CCSPlayer_ItemServices itemServices)
     {
@@ -65,18 +67,23 @@ public static class WeaponService
             setAttrByName.Invoke(handle, "keychain slot 0 seed", (float)keychain.Seed);
     }
 
+    /// <summary>
+    /// Apply a paint kit (plus optional nametag / StatTrak) to a weapon.
+    /// Single implementation shared by the GiveNamedItem hook and the
+    /// respawn re-apply pass in the plugin.
+    /// </summary>
     public static void ApplySkinToWeapon(
         CEconEntity weapon,
         ushort defIndex,
         int paintKit,
         HashSet<(ushort DefIndex, int Paint)> legacyPaints,
         MemoryFunctionVoid<nint, string, float> setAttrByName,
-        ref bool skinErrorLogged,
         int seed = 0,
         float wear = 0.01f,
         uint accountId = 0,
         string? nametag = null,
-        StatTrakInfo? statTrak = null)
+        StatTrakInfo? statTrak = null,
+        ILogger? logger = null)
     {
         try
         {
@@ -91,6 +98,12 @@ public static class WeaponService
             weapon.FallbackPaintKit = paintKit;
             weapon.FallbackSeed = seed;
             weapon.FallbackWear = wear;
+
+            // Mark fallback netvars dirty so they are (re)sent to clients.
+            // Without this, whether the client sees the skin depends on whether the
+            // initial entity snapshot happened to include these values — which is
+            // why skins would intermittently render as the default texture even
+            // though the inspect description showed the custom skin.
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
@@ -109,7 +122,10 @@ public static class WeaponService
                 item.CustomName = nametag;
             }
 
-            // Apply StatTrak (kill count stored as uint bits in float storage)
+            // Apply StatTrak. The kill count must be written as raw uint bits
+            // reinterpreted as float ("kill eater" attributes store integers in
+            // float storage). Passing a plain float here makes the client read
+            // garbage bits, which rendered as the capped 99999 display value.
             if (statTrak != null && statTrak.Enabled)
             {
                 uint count = (uint)Math.Max(0, statTrak.Count);
@@ -130,9 +146,11 @@ public static class WeaponService
         }
         catch (Exception ex)
         {
-            if (!skinErrorLogged)
+            // Log only once — this fires per weapon per spawn and would spam.
+            if (!_skinErrorLogged)
             {
-                skinErrorLogged = true;
+                _skinErrorLogged = true;
+                logger?.LogError($"[PlayerSkinMod] ApplySkinToWeapon failed: {ex.Message}");
             }
         }
     }
@@ -216,7 +234,7 @@ public static class WeaponService
                 break;
             }
         }
-        catch (Exception ex)
+        catch
         {
             // Knife replacement failed silently — common with invalid defindex or timing issues
         }
