@@ -2,7 +2,7 @@
   "PluginProfile": {
     "Name": "PlayerSkinMod",
     "DisplayName": "Player Skin Mod",
-    "Version": "1.4.5",
+    "Version": "1.6.0",
     "Author": "CS2-Skin-local-mod",
     "Description": "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally",
     "MinimumCounterStrikeSharpVersion": "1.0.0",

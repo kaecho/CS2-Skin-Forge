@@ -57,6 +57,37 @@ public static class LoadoutService
                 if (loadoutEl.TryGetProperty("knifeSeed", out var knifeSeedEl))
                     loadout.KnifeSeed = knifeSeedEl.GetInt32();
 
+                // Per-team knives (v1.6.0+)
+                if (loadoutEl.TryGetProperty("knifeIndexCt", out var knifeIdxCtEl) && knifeIdxCtEl.GetInt32() >= 0)
+                    loadout.KnifeIndexCt = knifeIdxCtEl.GetInt32();
+                if (loadoutEl.TryGetProperty("knifePaintCt", out var knifePaintCtEl) && knifePaintCtEl.GetInt32() >= 0)
+                    loadout.KnifePaintCt = knifePaintCtEl.GetInt32();
+                if (loadoutEl.TryGetProperty("knifeWearCt", out var knifeWearCtEl))
+                    loadout.KnifeWearCt = (float)knifeWearCtEl.GetDouble();
+                if (loadoutEl.TryGetProperty("knifeSeedCt", out var knifeSeedCtEl))
+                    loadout.KnifeSeedCt = knifeSeedCtEl.GetInt32();
+                if (loadoutEl.TryGetProperty("knifeIndexT", out var knifeIdxTEl) && knifeIdxTEl.GetInt32() >= 0)
+                    loadout.KnifeIndexT = knifeIdxTEl.GetInt32();
+                if (loadoutEl.TryGetProperty("knifePaintT", out var knifePaintTEl) && knifePaintTEl.GetInt32() >= 0)
+                    loadout.KnifePaintT = knifePaintTEl.GetInt32();
+                if (loadoutEl.TryGetProperty("knifeWearT", out var knifeWearTEl))
+                    loadout.KnifeWearT = (float)knifeWearTEl.GetDouble();
+                if (loadoutEl.TryGetProperty("knifeSeedT", out var knifeSeedTEl))
+                    loadout.KnifeSeedT = knifeSeedTEl.GetInt32();
+
+                // Backward compat: old shared knife fields → apply to both teams
+                if (loadout.KnifeIndexCt < 0 && loadout.KnifeIndexT < 0 && loadout.KnifeIndex >= 0)
+                {
+                    loadout.KnifeIndexCt = loadout.KnifeIndex;
+                    loadout.KnifeIndexT = loadout.KnifeIndex;
+                    loadout.KnifePaintCt = loadout.KnifePaint;
+                    loadout.KnifePaintT = loadout.KnifePaint;
+                    loadout.KnifeWearCt = loadout.KnifeWear;
+                    loadout.KnifeWearT = loadout.KnifeWear;
+                    loadout.KnifeSeedCt = loadout.KnifeSeed;
+                    loadout.KnifeSeedT = loadout.KnifeSeed;
+                }
+
                 // Per-team gloves
                 if (loadoutEl.TryGetProperty("gloveIndexCt", out var gloveIdxCtEl) && gloveIdxCtEl.GetInt32() >= 0)
                     loadout.GloveIndexCt = gloveIdxCtEl.GetInt32();
@@ -175,6 +206,34 @@ public static class LoadoutService
                     }
                 }
 
+                // Per-team weapon skins (v1.6.0+)
+                ParseUShortIntMap(loadoutEl, "weaponPaintsCt", loadout.WeaponPaintsCt);
+                ParseUShortIntMap(loadoutEl, "weaponSeedsCt", loadout.WeaponSeedsCt);
+                ParseUShortFloatMap(loadoutEl, "weaponWearsCt", loadout.WeaponWearsCt);
+                ParseUShortIntMap(loadoutEl, "weaponPaintsT", loadout.WeaponPaintsT);
+                ParseUShortIntMap(loadoutEl, "weaponSeedsT", loadout.WeaponSeedsT);
+                ParseUShortFloatMap(loadoutEl, "weaponWearsT", loadout.WeaponWearsT);
+
+                // Backward compat: old shared weapon maps → apply to both teams
+                if (loadout.WeaponPaintsCt.Count == 0 && loadout.WeaponPaintsT.Count == 0 && loadout.WeaponPaints.Count > 0)
+                {
+                    foreach (var kv in loadout.WeaponPaints)
+                    {
+                        loadout.WeaponPaintsCt[kv.Key] = kv.Value;
+                        loadout.WeaponPaintsT[kv.Key] = kv.Value;
+                    }
+                    foreach (var kv in loadout.WeaponSeeds)
+                    {
+                        loadout.WeaponSeedsCt[kv.Key] = kv.Value;
+                        loadout.WeaponSeedsT[kv.Key] = kv.Value;
+                    }
+                    foreach (var kv in loadout.WeaponWears)
+                    {
+                        loadout.WeaponWearsCt[kv.Key] = kv.Value;
+                        loadout.WeaponWearsT[kv.Key] = kv.Value;
+                    }
+                }
+
                 if (loadoutEl.TryGetProperty("weaponStickers", out var wstEl))
                 {
                     foreach (var ws in wstEl.EnumerateObject())
@@ -251,6 +310,26 @@ public static class LoadoutService
         catch (Exception ex)
         {
             logger.LogError($"[PlayerSkinMod] LoadLoadoutFromFile failed: {ex.Message}");
+        }
+    }
+
+    private static void ParseUShortIntMap(JsonElement parent, string propName, Dictionary<ushort, int> target)
+    {
+        if (!parent.TryGetProperty(propName, out var mapEl) || mapEl.ValueKind != JsonValueKind.Object) return;
+        foreach (var kv in mapEl.EnumerateObject())
+        {
+            if (ushort.TryParse(kv.Name, out ushort defIndex) && kv.Value.GetInt32() >= 0)
+                target[defIndex] = kv.Value.GetInt32();
+        }
+    }
+
+    private static void ParseUShortFloatMap(JsonElement parent, string propName, Dictionary<ushort, float> target)
+    {
+        if (!parent.TryGetProperty(propName, out var mapEl) || mapEl.ValueKind != JsonValueKind.Object) return;
+        foreach (var kv in mapEl.EnumerateObject())
+        {
+            if (ushort.TryParse(kv.Name, out ushort defIndex))
+                target[defIndex] = (float)kv.Value.GetDouble();
         }
     }
 

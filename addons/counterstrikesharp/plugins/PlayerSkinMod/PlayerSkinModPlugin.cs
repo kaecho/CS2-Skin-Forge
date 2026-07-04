@@ -19,7 +19,7 @@ namespace PlayerSkinMod;
 public class PlayerSkinModPlugin : BasePlugin
 {
     public override string ModuleName        => "PlayerSkinMod";
-    public override string ModuleVersion     => "1.5.7";
+    public override string ModuleVersion     => "1.6.0";
     public override string ModuleAuthor      => "CS2-Skin-local-mod";
     public override string ModuleDescription => "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally";
 
@@ -255,8 +255,14 @@ public class PlayerSkinModPlugin : BasePlugin
 
         int kitId = loadout.MusicKit >= 0 ? StaticData.KitIds[Math.Min(loadout.MusicKit, StaticData.KitIds.Length - 1)] : StaticData.KitIds[_rng.Next(StaticData.KitIds.Length)];
 
-        int knifeIdx = loadout.KnifeIndex >= 0 ? Math.Min(loadout.KnifeIndex, StaticData.Knives.Length - 1) : _rng.Next(StaticData.Knives.Length);
-        int knifePaint = loadout.KnifePaint >= 0 ? loadout.KnifePaint : StaticData.KnifePaints[_rng.Next(StaticData.KnifePaints.Length)];
+        // Per-team knife selection (v1.6.0+); legacy shared fields are mirrored
+        // into the per-team fields by LoadoutService.
+        int knifeIndexSel = isCT ? loadout.KnifeIndexCt : loadout.KnifeIndexT;
+        int knifePaintSel = isCT ? loadout.KnifePaintCt : loadout.KnifePaintT;
+        int knifeSeedSel = isCT ? loadout.KnifeSeedCt : loadout.KnifeSeedT;
+        float knifeWearSel = isCT ? loadout.KnifeWearCt : loadout.KnifeWearT;
+        int knifeIdx = knifeIndexSel >= 0 ? Math.Min(knifeIndexSel, StaticData.Knives.Length - 1) : _rng.Next(StaticData.Knives.Length);
+        int knifePaint = knifePaintSel >= 0 ? knifePaintSel : StaticData.KnifePaints[_rng.Next(StaticData.KnifePaints.Length)];
 
         // Use per-team glove configuration
         ushort gloveDefIndex;
@@ -321,23 +327,53 @@ public class PlayerSkinModPlugin : BasePlugin
             // Knife is applied on both passes (immediate + 0.10f) for reliability.
             // Gloves are also applied on both passes — the second call is a safety net
             // in case the first call hit a timing issue (model not fully loaded, etc.).
-            ApplyWearables(player, pawn, knife.DefIndex, knifePaint, loadout, gloveDefIndex, glovePaint, gloveSeed, gloveWear, applyGloves: true);
-            AddTimer(0.10f, () => { if (pawn != null && pawn.IsValid) ApplyWearables(player, pawn, knife.DefIndex, knifePaint, loadout, gloveDefIndex, glovePaint, gloveSeed, gloveWear, applyGloves: true); });
+            ApplyWearables(player, pawn, knife.DefIndex, knifePaint, knifeSeedSel, knifeWearSel, gloveDefIndex, glovePaint, gloveSeed, gloveWear, applyGloves: true);
+            AddTimer(0.10f, () => { if (pawn != null && pawn.IsValid) ApplyWearables(player, pawn, knife.DefIndex, knifePaint, knifeSeedSel, knifeWearSel, gloveDefIndex, glovePaint, gloveSeed, gloveWear, applyGloves: true); });
+
+            // Re-apply gun skins to weapons already in the inventory. Weapons
+            // carried across round restarts never pass through GiveNamedItem,
+            // so without this pass they would keep the previous (or default)
+            // skin — one source of the intermittent default-texture reports.
+            AddTimer(0.20f, () =>
+            {
+                if (player == null || !player.IsValid || pawn == null || !pawn.IsValid) return;
+                ReapplyHeldWeaponSkins(player, pawn);
+            });
         });
 
         return HookResult.Continue;
     }
 
-    private void ApplyWearables(CCSPlayerController player, CCSPlayerPawn pawn, ushort knifeDefIndex, int knifePaintKit, PlayerLoadout loadout, ushort gloveDefIndex, int glovePaintKit, int gloveSeed, float gloveWear, bool applyGloves = true)
+    private void ReapplyHeldWeaponSkins(CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        try
+        {
+            var weapons = pawn.WeaponServices?.MyWeapons;
+            if (weapons == null) return;
+
+            int slot = player.Slot;
+            ulong steamId = player.SteamID;
+            var team = (CsTeam)player.TeamNum;
+
+            foreach (var handle in weapons)
+            {
+                var w = handle.Value;
+                if (w == null || !w.IsValid) continue;
+                ApplySkinForPlayer(slot, w, steamId, team);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"[PlayerSkinMod] ReapplyHeldWeaponSkins failed: {ex.Message}");
+        }
+    }
+
+    private void ApplyWearables(CCSPlayerController player, CCSPlayerPawn pawn, ushort knifeDefIndex, int knifePaintKit, int knifeSeed, float knifeWear, ushort gloveDefIndex, int glovePaintKit, int gloveSeed, float gloveWear, bool applyGloves = true)
     {
         if (player == null || !player.IsValid || pawn == null || !pawn.IsValid)
             return;
 
         if (_setAttrByName == null) return;
-
-        // Read knife wear/seed from loadout
-        int knifeSeed = loadout.KnifeSeed;
-        float knifeWear = loadout.KnifeWear;
 
         WeaponService.ReplaceKnife(player, pawn, knifeDefIndex, knifePaintKit, _legacyPaints, _setAttrByName, knifeSeed, knifeWear);
         if (applyGloves)
@@ -367,12 +403,21 @@ public class PlayerSkinModPlugin : BasePlugin
 
             int slot = player.Slot;
             ulong steamId = player.SteamID;
-            ApplySkinForPlayer(slot, weapon, steamId);
+            var team = (CsTeam)player.TeamNum;
+            ApplySkinForPlayer(slot, weapon, steamId, team);
 
+            // Re-apply on the next frame and once more shortly after: entity
+            // creation timing varies, and a single pass occasionally loses the
+            // race against the client's initial snapshot (skin shows default).
             Server.NextFrame(() =>
             {
                 if (weapon != null && weapon.IsValid)
-                    ApplySkinForPlayer(slot, weapon, steamId);
+                    ApplySkinForPlayer(slot, weapon, steamId, team);
+            });
+            AddTimer(0.25f, () =>
+            {
+                if (weapon != null && weapon.IsValid)
+                    ApplySkinForPlayer(slot, weapon, steamId, team);
             });
         }
         catch (Exception ex)
@@ -383,7 +428,7 @@ public class PlayerSkinModPlugin : BasePlugin
         return HookResult.Continue;
     }
 
-    private void ApplySkinForPlayer(int slot, CBasePlayerWeapon? weapon, ulong steamId = 0)
+    private void ApplySkinForPlayer(int slot, CBasePlayerWeapon? weapon, ulong steamId = 0, CsTeam team = CsTeam.None)
     {
         if (_setAttrByName == null || weapon == null || !weapon.IsValid) return;
 
@@ -396,17 +441,24 @@ public class PlayerSkinModPlugin : BasePlugin
         ushort defIndex = weapon.AttributeManager?.Item?.ItemDefinitionIndex ?? 0;
         if (defIndex == 0) return;
 
+        // Per-team paint maps (v1.6.0+); LoadoutService mirrors legacy shared
+        // maps into both team maps, so these are the single lookup source.
+        bool isCT = team == CsTeam.CounterTerrorist;
+        var paints = isCT ? loadout.WeaponPaintsCt : loadout.WeaponPaintsT;
+        var seeds = isCT ? loadout.WeaponSeedsCt : loadout.WeaponSeedsT;
+        var wears = isCT ? loadout.WeaponWearsCt : loadout.WeaponWearsT;
+
         int paint;
-        if (loadout.WeaponPaints.TryGetValue(defIndex, out int selectedPaint))
+        if (paints.TryGetValue(defIndex, out int selectedPaint))
         {
             paint = selectedPaint;
         }
-        else if (loadout.UseRandom && StaticData.GunPaints.TryGetValue(defIndex, out int[]? paints) && paints.Length > 0)
+        else if (loadout.UseRandom && StaticData.GunPaints.TryGetValue(defIndex, out int[]? gunPaints) && gunPaints.Length > 0)
         {
             var key = (slot, defIndex);
             if (!_playerGunPaints.TryGetValue(key, out paint))
             {
-                paint = paints[_rng.Next(paints.Length)];
+                paint = gunPaints[_rng.Next(gunPaints.Length)];
                 _playerGunPaints[key] = paint;
             }
         }
@@ -415,9 +467,8 @@ public class PlayerSkinModPlugin : BasePlugin
             return;
         }
 
-        // Read wear/seed from loadout (backward-compatible)
-        int seed = loadout.WeaponSeeds.TryGetValue(defIndex, out int s) ? s : 0;
-        float wear = loadout.WeaponWears.TryGetValue(defIndex, out float w) ? w : 0.01f;
+        int seed = seeds.TryGetValue(defIndex, out int s) ? s : 0;
+        float wear = wears.TryGetValue(defIndex, out float w) ? w : 0.01f;
 
         // Get nametag and stattrak if configured
         string? nametag = loadout.WeaponNametags.TryGetValue(defIndex, out string? nt) ? nt : null;
@@ -452,6 +503,15 @@ public class PlayerSkinModPlugin : BasePlugin
             weapon.FallbackSeed = seed;
             weapon.FallbackWear = wear;
 
+            // Mark fallback netvars dirty so they are (re)sent to clients.
+            // Without this, whether the client sees the skin depends on whether the
+            // initial entity snapshot happened to include these values — which is
+            // why skins would intermittently render as the default texture even
+            // though the inspect description showed the custom skin.
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
+
             _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture prefab", paintKit);
             _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture seed", (float)seed);
             _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture wear", wear);
@@ -466,17 +526,20 @@ public class PlayerSkinModPlugin : BasePlugin
                 item.CustomName = nametag;
             }
 
-            // Apply StatTrak
+            // Apply StatTrak. The kill count must be written as raw uint bits
+            // reinterpreted as float ("kill eater" attributes store integers in
+            // float storage). Passing a plain float here makes the client read
+            // garbage bits, which rendered as the capped 99999 display value.
             if (statTrak != null && statTrak.Enabled)
             {
+                uint count = (uint)Math.Max(0, statTrak.Count);
                 item.EntityQuality = 9; // StatTrak quality
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", 80);
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", 0);
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", 80);
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", 0);
-                // Set StatTrak count via attribute
-                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater user 1", (float)statTrak.Count);
-                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater user 1", (float)statTrak.Count);
+                weapon.FallbackStatTrak = (int)count;
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
+                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", UIntToFloat(0));
+                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
+                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", UIntToFloat(0));
             }
 
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");

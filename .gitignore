@@ -30,3 +30,4 @@ Cargo.lock
 
 # Tauri
 src-tauri/target/
+Panel/src-tauri/gen/

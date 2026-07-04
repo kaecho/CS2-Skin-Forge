@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useT } from "../i18n";
 
 interface HeaderProps {
@@ -5,33 +7,52 @@ interface HeaderProps {
   onAboutClick: () => void;
 }
 
+let cachedVersion: string | null = null;
+
+/** Read the app version from Tauri (single source of truth: tauri.conf.json). */
+export function useAppVersion(): string {
+  const [version, setVersion] = useState<string>(cachedVersion ?? "");
+  useEffect(() => {
+    if (cachedVersion) return;
+    getVersion()
+      .then((v) => {
+        cachedVersion = v;
+        setVersion(v);
+      })
+      .catch(() => setVersion(""));
+  }, []);
+  return version;
+}
+
 export default function Header({ onSettingsClick, onAboutClick }: HeaderProps) {
   const { t } = useT();
+  const version = useAppVersion();
 
   return (
-    <header className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 px-4 py-3" data-tauri-drag-region>
+    <header className="bg-black/30 border-b border-white/[0.06] px-4 py-2.5" data-tauri-drag-region>
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center">
-            <span className="text-lg font-bold text-white">CS</span>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+            <svg className="w-5 h-5 text-black/80" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="4" />
+              <path strokeLinecap="round" d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+            </svg>
           </div>
           <div>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-              {t("app.title")}
-            </h1>
-            <p className="text-xs text-gray-400">v1.5.14 • {t("app.localOnly")}</p>
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-base font-bold text-white leading-tight">{t("app.title")}</h1>
+              {version && <span className="text-[11px] text-gray-500 font-mono">v{version}</span>}
+            </div>
+            <p className="text-[11px] text-gray-500 leading-tight">{t("app.localOnly")} · Open Source</p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-semibold rounded-full border border-green-500/30">
+        <div className="flex items-center gap-2">
+          <span className="chip !text-emerald-300 !border-emerald-500/25 !bg-emerald-500/[0.08]">
             {t("app.vacSafe")}
-          </span>
-          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-semibold rounded-full border border-blue-500/30">
-            {t("app.localOnly")}
           </span>
           <button
             onClick={onSettingsClick}
-            className="ml-2 p-2 rounded-lg bg-gray-700/50 hover:bg-gray-600/50 transition-colors text-gray-300 hover:text-white"
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.07] transition-colors"
             title={t("settings.title")}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,7 +62,7 @@ export default function Header({ onSettingsClick, onAboutClick }: HeaderProps) {
           </button>
           <button
             onClick={onAboutClick}
-            className="p-2 rounded-lg bg-gray-700/50 hover:bg-gray-600/50 transition-colors text-gray-300 hover:text-white"
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.07] transition-colors"
             title={t("about.title")}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

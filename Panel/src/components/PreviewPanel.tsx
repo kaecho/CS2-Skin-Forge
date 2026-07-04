@@ -10,10 +10,13 @@ interface PreviewPanelProps {
 
 export default function PreviewPanel({ loadout }: PreviewPanelProps) {
   const { t, lang } = useT();
+  const isChinese = lang === 'schinese' || lang === 'tchinese';
 
-  const getKnifeName = () => {
-    if (loadout.knifeIndex === -1) return t("preview.notSelected");
-    return knives[loadout.knifeIndex]?.name || t("preview.notSelected");
+  const getKnifeName = (idx: number) => {
+    if (idx === -1) return t("preview.random");
+    const knife = knives[idx];
+    if (!knife) return t("preview.notSelected");
+    return isChinese ? knife.nameZh : knife.name;
   };
 
   const getGloveName = (idx: number) => {
@@ -44,62 +47,59 @@ export default function PreviewPanel({ loadout }: PreviewPanelProps) {
     return names.join(' / ');
   };
 
-  const getCustomWeaponCount = () => Object.keys(loadout.weaponPaints).length;
+  const ctWeaponCount = Object.keys(loadout.weaponPaintsCt).length;
+  const tWeaponCount = Object.keys(loadout.weaponPaintsT).length;
+  const hasCustomWeapons = ctWeaponCount > 0 || tWeaponCount > 0;
+
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div>
+      <div className="text-[11px] font-medium text-gray-500 mb-0.5">{label}</div>
+      {children}
+    </div>
+  );
 
   return (
     <div className="card">
-      <h3 className="text-sm font-semibold text-white mb-3 flex items-center space-x-2">
-        <span>{t("preview.title")}</span>
-      </h3>
+      <h3 className="text-sm font-semibold text-white mb-3">{t("preview.title")}</h3>
 
       <div className="space-y-3">
-        <div className="flex items-start space-x-2">
-          <div>
-            <div className="text-xs font-medium text-gray-400">{t("preview.knife")}</div>
-            <div className="text-xs text-white">{getKnifeName()}</div>
-          </div>
-        </div>
+        <Row label={t("preview.knife")}>
+          <div className="text-xs"><span className="text-sky-400 font-semibold">CT</span> <span className="text-gray-200">{getKnifeName(loadout.knifeIndexCt)}</span></div>
+          <div className="text-xs"><span className="text-orange-400 font-semibold">T</span> <span className="text-gray-200">{getKnifeName(loadout.knifeIndexT)}</span></div>
+        </Row>
 
-        <div className="flex items-start space-x-2">
-          <div>
-            <div className="text-xs font-medium text-gray-400">{t("preview.gloves")}</div>
-            <div className="text-xs text-blue-300">{t("glove.ct")}: {getGloveName(loadout.gloveIndexCt)}</div>
-            <div className="text-xs text-orange-300">{t("glove.t")}: {getGloveName(loadout.gloveIndexT)}</div>
-          </div>
-        </div>
+        <Row label={t("preview.gloves")}>
+          <div className="text-xs"><span className="text-sky-400 font-semibold">CT</span> <span className="text-gray-200">{getGloveName(loadout.gloveIndexCt)}</span></div>
+          <div className="text-xs"><span className="text-orange-400 font-semibold">T</span> <span className="text-gray-200">{getGloveName(loadout.gloveIndexT)}</span></div>
+        </Row>
 
-        <div className="flex items-start space-x-2">
-          <div>
-            <div className="text-xs font-medium text-gray-400">{t("agent.title")}</div>
-            <div className="text-xs text-white">{getAgentName()}</div>
-          </div>
-        </div>
+        <Row label={t("agent.title")}>
+          <div className="text-xs text-gray-200">{getAgentName()}</div>
+        </Row>
 
-        <div className="flex items-start space-x-2">
-          <div>
-            <div className="text-xs font-medium text-gray-400">{t("preview.music")}</div>
-            <div className="text-xs text-white">{getMusicKitName()}</div>
-          </div>
-        </div>
+        <Row label={t("preview.music")}>
+          <div className="text-xs text-gray-200">{getMusicKitName()}</div>
+        </Row>
 
-        <div className="flex items-start space-x-2">
-          <div>
-            <div className="text-xs font-medium text-gray-400">{t("preview.weapons")}</div>
-            <div className="text-xs text-white">
-              {getCustomWeaponCount() > 0
-                ? `${getCustomWeaponCount()} ${t("preview.custom").toLowerCase()}`
-                : t("preview.random")}
+        <Row label={t("preview.weapons")}>
+          {hasCustomWeapons ? (
+            <div className="text-xs text-gray-200">
+              <span className="text-sky-400 font-semibold">CT</span> {ctWeaponCount}
+              <span className="mx-1.5 text-gray-600">·</span>
+              <span className="text-orange-400 font-semibold">T</span> {tWeaponCount}
             </div>
-          </div>
-        </div>
+          ) : (
+            <div className="text-xs text-gray-200">{t("preview.random")}</div>
+          )}
+        </Row>
 
-        <div className="border-t border-gray-700 my-2"></div>
+        <div className="border-t border-white/[0.06] my-2"></div>
 
         <div className="text-center">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+          <span className={`chip ${
             loadout.useRandom
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              ? '!text-emerald-300 !border-emerald-500/25 !bg-emerald-500/[0.08]'
+              : '!text-amber-300 !border-amber-500/25 !bg-amber-500/[0.08]'
           }`}>
             {loadout.useRandom ? t("preview.random") : t("preview.custom")}
           </span>

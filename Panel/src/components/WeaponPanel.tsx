@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Loadout } from '../utils/types';
+import { Loadout, Team } from '../utils/types';
 import { weapons, weaponCategories, getWeaponsByCategory } from '../data/weapons';
 import { weaponPaints } from '../data/skins';
 import { allStickers, getStickerImageUrl } from '../data/stickers';
@@ -7,6 +7,8 @@ import { allKeychains, getKeychainImageUrl, type KeychainData } from '../data/ke
 import { getWeaponDefaultImage } from '../data/weaponImages';
 import { skinNamesEn } from '../data/skinNamesEn';
 import { useT } from '../i18n';
+import TeamToggle from './TeamToggle';
+import WearSeedControls from './WearSeedControls';
 
 interface WeaponPanelProps {
   loadout: Loadout;
@@ -15,6 +17,7 @@ interface WeaponPanelProps {
 
 export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps) {
   const { t, lang } = useT();
+  const [team, setTeam] = useState<Team>('ct');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedWeapon, setSelectedWeapon] = useState<number | null>(null);
   const [activeStickerSlot, setActiveStickerSlot] = useState(0);
@@ -22,9 +25,21 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
   const [stickerLimit, setStickerLimit] = useState(100);
   const [keychainSearch, setKeychainSearch] = useState('');
   const [keychainLimit, setKeychainLimit] = useState(100);
+  const [copied, setCopied] = useState(false);
 
   const filteredWeapons = getWeaponsByCategory(selectedCategory);
   const isChinese = lang === 'schinese' || lang === 'tchinese';
+
+  // Per-team map accessors
+  const paintsKey = team === 'ct' ? 'weaponPaintsCt' : 'weaponPaintsT';
+  const wearsKey = team === 'ct' ? 'weaponWearsCt' : 'weaponWearsT';
+  const seedsKey = team === 'ct' ? 'weaponSeedsCt' : 'weaponSeedsT';
+  const paints = loadout[paintsKey];
+  const wears = loadout[wearsKey];
+  const seeds = loadout[seedsKey];
+  const otherPaintsKey = team === 'ct' ? 'weaponPaintsT' : 'weaponPaintsCt';
+  const otherWearsKey = team === 'ct' ? 'weaponWearsT' : 'weaponWearsCt';
+  const otherSeedsKey = team === 'ct' ? 'weaponSeedsT' : 'weaponSeedsCt';
 
   const getPaintName = (defindex: number, paintId: number, fallbackName: string): string => {
     if (isChinese) return fallbackName;
@@ -52,36 +67,44 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
 
   const handlePaintSelect = (defindex: number, paintId: number) => {
     updateLoadout({
-      weaponPaints: { ...loadout.weaponPaints, [defindex]: paintId },
+      [paintsKey]: { ...paints, [defindex]: paintId },
       useRandom: false,
-    });
+    } as Partial<Loadout>);
   };
 
   const clearWeaponPaint = (defindex: number) => {
-    const newPaints = { ...loadout.weaponPaints };
-    delete newPaints[defindex];
-    const newStickers = { ...loadout.weaponStickers };
-    delete newStickers[defindex];
-    const newWears = { ...loadout.weaponWears };
-    delete newWears[defindex];
-    const newSeeds = { ...loadout.weaponSeeds };
-    delete newSeeds[defindex];
-    const newKeychains = { ...loadout.weaponKeychains };
-    delete newKeychains[defindex];
-    const newNametags = { ...loadout.weaponNametags };
-    delete newNametags[defindex];
-    const newStatTrak = { ...loadout.weaponStatTrak };
-    delete newStatTrak[defindex];
+    const removeKey = (map: Record<number, unknown>) => {
+      const next = { ...map };
+      delete next[defindex];
+      return next;
+    };
+    const newPaintsCt = removeKey(loadout.weaponPaintsCt);
+    const newPaintsT = removeKey(loadout.weaponPaintsT);
     updateLoadout({
-      weaponPaints: newPaints,
-      weaponStickers: newStickers,
-      weaponWears: newWears,
-      weaponSeeds: newSeeds,
-      weaponKeychains: newKeychains,
-      weaponNametags: newNametags,
-      weaponStatTrak: newStatTrak,
-      useRandom: Object.keys(newPaints).length === 0,
+      weaponPaintsCt: newPaintsCt as Record<number, number>,
+      weaponPaintsT: newPaintsT as Record<number, number>,
+      weaponWearsCt: removeKey(loadout.weaponWearsCt) as Record<number, number>,
+      weaponWearsT: removeKey(loadout.weaponWearsT) as Record<number, number>,
+      weaponSeedsCt: removeKey(loadout.weaponSeedsCt) as Record<number, number>,
+      weaponSeedsT: removeKey(loadout.weaponSeedsT) as Record<number, number>,
+      weaponStickers: removeKey(loadout.weaponStickers) as Loadout['weaponStickers'],
+      weaponKeychains: removeKey(loadout.weaponKeychains) as Loadout['weaponKeychains'],
+      weaponNametags: removeKey(loadout.weaponNametags) as Record<number, string>,
+      weaponStatTrak: removeKey(loadout.weaponStatTrak) as Loadout['weaponStatTrak'],
+      useRandom: Object.keys(newPaintsCt).length === 0 && Object.keys(newPaintsT).length === 0,
     });
+  };
+
+  /** Copy the selected weapon's paint/wear/seed from the active team to the other team. */
+  const copyToOtherTeam = (defindex: number) => {
+    if (paints[defindex] === undefined) return;
+    updateLoadout({
+      [otherPaintsKey]: { ...loadout[otherPaintsKey], [defindex]: paints[defindex] },
+      [otherWearsKey]: { ...loadout[otherWearsKey], [defindex]: wears[defindex] ?? 0.01 },
+      [otherSeedsKey]: { ...loadout[otherSeedsKey], [defindex]: seeds[defindex] ?? 0 },
+    } as Partial<Loadout>);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   const handleStickerSelect = (defindex: number, stickerId: number) => {
@@ -101,15 +124,11 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
   };
 
   const handleWearChange = (defindex: number, wear: number) => {
-    updateLoadout({
-      weaponWears: { ...loadout.weaponWears, [defindex]: wear },
-    });
+    updateLoadout({ [wearsKey]: { ...wears, [defindex]: wear } } as Partial<Loadout>);
   };
 
   const handleSeedChange = (defindex: number, seed: number) => {
-    updateLoadout({
-      weaponSeeds: { ...loadout.weaponSeeds, [defindex]: seed },
-    });
+    updateLoadout({ [seedsKey]: { ...seeds, [defindex]: seed } } as Partial<Loadout>);
   };
 
   // Keychain handlers
@@ -201,16 +220,18 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
     return allFilteredKeychains.slice(0, keychainLimit);
   }, [allFilteredKeychains, keychainLimit]);
 
-  const wearLabels = ['FN', 'MW', 'FT', 'WW', 'BS'];
-  const wearValues = [0.01, 0.07, 0.15, 0.38, 0.45];
-
   return (
     <div className="space-y-3">
+      {/* Team selector: weapon skins are configured per team */}
+      <TeamToggle team={team} onChange={setTeam} ctLabel={t('team.ct')} tLabel={t('team.t')} />
+
       <div className="flex flex-wrap gap-1.5">
         {weaponCategories.map(category => (
           <button key={category} onClick={() => setSelectedCategory(category)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
-              selectedCategory === category ? 'bg-amber-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 ${
+              selectedCategory === category
+                ? 'bg-amber-500 text-black'
+                : 'bg-white/[0.05] text-gray-300 hover:bg-white/10 border border-white/[0.06]'
             }`}>
             {getCategoryLabel(category)}
           </button>
@@ -219,18 +240,23 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
         {filteredWeapons.map(weapon => {
-          const hasCustomPaint = loadout.weaponPaints[weapon.defindex] !== undefined;
+          const hasCt = loadout.weaponPaintsCt[weapon.defindex] !== undefined;
+          const hasT = loadout.weaponPaintsT[weapon.defindex] !== undefined;
           const isSelected = selectedWeapon === weapon.defindex;
           return (
             <button key={weapon.defindex} onClick={() => setSelectedWeapon(isSelected ? null : weapon.defindex)}
-              className={`card p-2 text-left transition-all duration-200 cursor-pointer overflow-hidden
-                ${isSelected ? 'ring-2 ring-amber-500 border-amber-500' : ''}
-                ${hasCustomPaint ? 'border-l-2 border-l-green-500' : ''}`}>
+              className={`card card-hover !p-2 text-left cursor-pointer overflow-hidden relative
+                ${isSelected ? 'card-selected' : ''}`}>
+              {(hasCt || hasT) && (
+                <div className="absolute top-1.5 right-1.5 flex gap-1">
+                  {hasCt && <span className="w-2 h-2 rounded-full bg-sky-400" title="CT" />}
+                  {hasT && <span className="w-2 h-2 rounded-full bg-orange-400" title="T" />}
+                </div>
+              )}
               <img src={getWeaponDefaultImage(weapon.defindex)} alt={weapon.name}
                 className="w-full h-12 object-contain mb-1 opacity-90"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               <div className="text-xs font-semibold text-white truncate">{getDisplayName(weapon)}</div>
-              {hasCustomPaint && <div className="text-xs text-green-400 mt-0.5">✓ {t("preview.custom")}</div>}
             </button>
           );
         })}
@@ -238,22 +264,34 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
 
       {selectedWeapon && weaponPaints[selectedWeapon] && (
         <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-white">
-              {getDisplayName(weapons.find(w => w.defindex === selectedWeapon)!)} - {t("weapon.selectPaint")}
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <h3 className="text-sm font-semibold text-white truncate">
+              {getDisplayName(weapons.find(w => w.defindex === selectedWeapon)!)}
+              <span className={`ml-2 text-[11px] font-bold ${team === 'ct' ? 'text-sky-400' : 'text-orange-400'}`}>
+                {team === 'ct' ? t('team.ct') : t('team.t')}
+              </span>
             </h3>
-            {loadout.weaponPaints[selectedWeapon] !== undefined && (
-              <button onClick={() => clearWeaponPaint(selectedWeapon)} className="text-xs text-red-400 hover:text-red-300">
-                {t("btn.reset")}
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {paints[selectedWeapon] !== undefined && (
+                <button onClick={() => copyToOtherTeam(selectedWeapon)}
+                  className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded-md bg-white/[0.05] border border-white/[0.08] transition-colors">
+                  {copied ? t('team.copied') : (team === 'ct' ? t('team.copyToT') : t('team.copyToCt'))}
+                </button>
+              )}
+              {(loadout.weaponPaintsCt[selectedWeapon] !== undefined || loadout.weaponPaintsT[selectedWeapon] !== undefined) && (
+                <button onClick={() => clearWeaponPaint(selectedWeapon)} className="text-xs text-red-400 hover:text-red-300">
+                  {t("btn.reset")}
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto">
             {weaponPaints[selectedWeapon].map(paint => (
               <button key={paint.id} onClick={() => handlePaintSelect(selectedWeapon, paint.id)}
-                className={`flex flex-col items-center p-2 rounded-md text-xs font-medium transition-all duration-200 ${
-                  loadout.weaponPaints[selectedWeapon] === paint.id
-                    ? 'bg-amber-600 text-white ring-1 ring-amber-400' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                className={`flex flex-col items-center p-2 rounded-lg text-xs font-medium transition-colors duration-150 border ${
+                  paints[selectedWeapon] === paint.id
+                    ? 'bg-amber-500/[0.12] text-amber-200 border-amber-500/50'
+                    : 'bg-white/[0.04] text-gray-300 hover:bg-white/[0.08] border-white/[0.05]'
                 }`}>
                 {paint.image && (
                   <img src={paint.image} alt={paint.name}
@@ -265,62 +303,18 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
             ))}
           </div>
 
-          {/* Wear & Seed controls */}
-          {loadout.weaponPaints[selectedWeapon] !== undefined && (
-            <div className="mt-4 border-t border-gray-700 pt-3">
-              <h4 className="text-xs font-semibold text-gray-300 mb-2">{t("weapon.settings")}</h4>
-              <div className="space-y-3 p-2 bg-gray-800 rounded-lg">
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">
-                    {t("weapon.wear")} ({wearLabels[wearValues.findIndex(v => Math.abs(v - (loadout.weaponWears[selectedWeapon] ?? 0.01)) < 0.02)] || 'Custom'})
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={loadout.weaponWears[selectedWeapon] ?? 0.01}
-                      onChange={(e) => handleWearChange(selectedWeapon, parseFloat(e.target.value))}
-                      className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-                    <span className="text-xs text-gray-300 w-12 text-right">{(loadout.weaponWears[selectedWeapon] ?? 0.01).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between mt-1">
-                    {wearValues.map((v, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleWearChange(selectedWeapon, v)}
-                        className={`text-[10px] px-1.5 py-0.5 rounded transition-all ${
-                          Math.abs((loadout.weaponWears[selectedWeapon] ?? 0.01) - v) < 0.02
-                            ? 'bg-amber-600 text-white'
-                            : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {wearLabels[i]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          {/* Wear & Seed controls (with manual input) */}
+          {paints[selectedWeapon] !== undefined && (
+            <div className="mt-4 border-t border-white/[0.06] pt-3 space-y-3">
+              <h4 className="section-label">{t("weapon.settings")}</h4>
+              <WearSeedControls
+                wear={wears[selectedWeapon] ?? 0.01}
+                seed={seeds[selectedWeapon] ?? 0}
+                onWearChange={(w) => handleWearChange(selectedWeapon, w)}
+                onSeedChange={(s) => handleSeedChange(selectedWeapon, s)}
+              />
 
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">
-                    {t("weapon.seed")} (0 = random)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1000"
-                      step="1"
-                      value={loadout.weaponSeeds[selectedWeapon] ?? 0}
-                      onChange={(e) => handleSeedChange(selectedWeapon, parseInt(e.target.value))}
-                      className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-                    <span className="text-xs text-gray-300 w-10 text-right">{loadout.weaponSeeds[selectedWeapon] ?? 0}</span>
-                  </div>
-                </div>
-
+              <div className="space-y-3 p-3 bg-black/20 rounded-lg border border-white/[0.04]">
                 {/* Nametag */}
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">{t("weapon.nametag")}</label>
@@ -330,7 +324,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                     value={loadout.weaponNametags[selectedWeapon] ?? ''}
                     onChange={(e) => handleNametagChange(selectedWeapon, e.target.value)}
                     maxLength={64}
-                    className="w-full bg-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="input-field !text-xs"
                   />
                 </div>
 
@@ -339,28 +333,26 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                   <label className="text-xs text-gray-400">{t("weapon.stattrak")}</label>
                   <button
                     onClick={() => handleStatTrakToggle(selectedWeapon)}
-                    className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
                       loadout.weaponStatTrak[selectedWeapon]?.enabled
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
+                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+                        : 'bg-white/[0.05] text-gray-400 hover:bg-white/10 border border-white/[0.08]'
                     }`}
                   >
                     {loadout.weaponStatTrak[selectedWeapon]?.enabled ? 'ON' : 'OFF'}
                   </button>
                 </div>
                 {loadout.weaponStatTrak[selectedWeapon]?.enabled && (
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">{t("weapon.stattrakCount")}</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max="999999"
-                        value={loadout.weaponStatTrak[selectedWeapon]?.count ?? 0}
-                        onChange={(e) => handleStatTrakCountChange(selectedWeapon, parseInt(e.target.value) || 0)}
-                        className="w-24 bg-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      />
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-gray-400">{t("weapon.stattrakCount")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="999999"
+                      value={loadout.weaponStatTrak[selectedWeapon]?.count ?? 0}
+                      onChange={(e) => handleStatTrakCountChange(selectedWeapon, parseInt(e.target.value) || 0)}
+                      className="num-input !w-24"
+                    />
                   </div>
                 )}
               </div>
@@ -368,19 +360,21 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
           )}
 
           {/* Sticker Section */}
-          <div className="mt-4 border-t border-gray-700 pt-3">
-            <h4 className="text-xs font-semibold text-gray-300 mb-2">Stickers</h4>
+          <div className="mt-4 border-t border-white/[0.06] pt-3">
+            <h4 className="section-label mb-2">Stickers</h4>
             <div className="flex gap-1.5 mb-2">
               {[0,1,2,3,4].map(slot => {
                 const stickers = loadout.weaponStickers[selectedWeapon] || [];
                 const hasSticker = stickers[slot]?.id > 0;
                 return (
                   <button key={slot} onClick={() => setActiveStickerSlot(slot)}
-                    className={`relative px-2 py-1 rounded text-xs transition-all ${
-                      activeStickerSlot === slot ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    className={`relative px-2.5 py-1 rounded-md text-xs transition-colors ${
+                      activeStickerSlot === slot
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        : 'bg-white/[0.05] text-gray-400 hover:bg-white/10 border border-white/[0.06]'
                     }`}>
-                    Slot {slot + 1}
-                    {hasSticker && <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full" />}
+                    {slot + 1}
+                    {hasSticker && <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full" />}
                   </button>
                 );
               })}
@@ -393,7 +387,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
               if (current?.id > 0) {
                 const stickerData = allStickers.find(s => s.id === current.id);
                 return (
-                  <div className="flex items-center gap-2 mb-2 p-2 bg-gray-800 rounded">
+                  <div className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg border border-white/[0.04]">
                     <img src={getStickerImageUrl(stickerData?.image || `econ/stickers/community01`)}
                       alt={stickerData?.name || 'Sticker'} className="w-10 h-10 object-contain"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -403,7 +397,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                   </div>
                 );
               }
-              return <p className="text-xs text-gray-500 mb-2">Empty slot</p>;
+              return <p className="text-xs text-gray-600 mb-2">Empty slot</p>;
             })()}
 
             {/* Sticker search */}
@@ -413,7 +407,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 placeholder={t("weapon.stickerSearch")}
                 value={stickerSearch}
                 onChange={(e) => setStickerSearch(e.target.value)}
-                className="flex-1 bg-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="input-field !text-xs"
               />
             </div>
 
@@ -421,7 +415,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 max-h-48 overflow-y-auto">
               {filteredStickers.map(sticker => (
                 <button key={sticker.id} onClick={() => handleStickerSelect(selectedWeapon, sticker.id)}
-                  className="flex flex-col items-center p-1.5 rounded bg-gray-700 hover:bg-gray-600 transition-all"
+                  className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.04] transition-colors"
                   title={sticker.name}>
                   <img src={getStickerImageUrl(sticker.image)} alt={sticker.name}
                     className="w-8 h-8 object-contain"
@@ -430,7 +424,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 </button>
               ))}
               {filteredStickers.length === 0 && (
-                <div className="col-span-full text-center text-xs text-gray-500 py-2">
+                <div className="col-span-full text-center text-xs text-gray-600 py-2">
                   No stickers found
                 </div>
               )}
@@ -438,29 +432,24 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
             {allFilteredStickers.length > stickerLimit && (
               <button
                 onClick={() => setStickerLimit(prev => prev + 100)}
-                className="w-full mt-2 py-1.5 text-xs text-gray-300 bg-gray-700 hover:bg-gray-600 rounded transition-all"
+                className="w-full mt-2 py-1.5 text-xs text-gray-300 bg-white/[0.05] hover:bg-white/10 rounded-lg border border-white/[0.06] transition-colors"
               >
                 Load More ({filteredStickers.length} / {allFilteredStickers.length})
               </button>
             )}
-            {!stickerSearch && allFilteredStickers.length > 100 && (
-              <p className="text-[10px] text-gray-600 mt-1">
-                {`Showing ${filteredStickers.length} of ${allFilteredStickers.length} stickers - use search to find specific stickers`}
-              </p>
-            )}
           </div>
 
           {/* Keychain Section */}
-          <div className="mt-4 border-t border-gray-700 pt-3">
-            <h4 className="text-xs font-semibold text-gray-300 mb-2">{t("weapon.keychain")}</h4>
-            
+          <div className="mt-4 border-t border-white/[0.06] pt-3">
+            <h4 className="section-label mb-2">{t("weapon.keychain")}</h4>
+
             {/* Current keychain */}
             {(() => {
               const current = loadout.weaponKeychains[selectedWeapon];
               if (current?.id > 0) {
                 const keychainData = allKeychains.find(k => k.id === current.id);
                 return (
-                  <div className="flex items-center gap-2 mb-2 p-2 bg-gray-800 rounded">
+                  <div className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg border border-white/[0.04]">
                     <img src={getKeychainImageUrl(keychainData?.image || '')}
                       alt={keychainData ? getKeychainName(keychainData) : 'Keychain'} className="w-10 h-10 object-contain"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -470,7 +459,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                   </div>
                 );
               }
-              return <p className="text-xs text-gray-500 mb-2">No keychain equipped</p>;
+              return <p className="text-xs text-gray-600 mb-2">No keychain equipped</p>;
             })()}
 
             {/* Keychain search */}
@@ -480,7 +469,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 placeholder={t("weapon.keychainSearch")}
                 value={keychainSearch}
                 onChange={(e) => setKeychainSearch(e.target.value)}
-                className="flex-1 bg-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="input-field !text-xs"
               />
             </div>
 
@@ -488,10 +477,10 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 max-h-48 overflow-y-auto">
               {filteredKeychains.map(keychain => (
                 <button key={keychain.id} onClick={() => handleKeychainSelect(selectedWeapon, keychain.id)}
-                  className={`flex flex-col items-center p-1.5 rounded transition-all ${
+                  className={`flex flex-col items-center p-1.5 rounded-lg border transition-colors ${
                     loadout.weaponKeychains[selectedWeapon]?.id === keychain.id
-                      ? 'bg-amber-600 ring-1 ring-amber-400'
-                      : 'bg-gray-700 hover:bg-gray-600'
+                      ? 'bg-amber-500/[0.12] border-amber-500/50'
+                      : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.04]'
                   }`}
                   title={getKeychainName(keychain)}>
                   <img src={getKeychainImageUrl(keychain.image)} alt={getKeychainName(keychain)}
@@ -501,7 +490,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 </button>
               ))}
               {filteredKeychains.length === 0 && (
-                <div className="col-span-full text-center text-xs text-gray-500 py-2">
+                <div className="col-span-full text-center text-xs text-gray-600 py-2">
                   No keychains found
                 </div>
               )}
@@ -509,7 +498,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
             {allFilteredKeychains.length > keychainLimit && (
               <button
                 onClick={() => setKeychainLimit(prev => prev + 100)}
-                className="w-full mt-2 py-1.5 text-xs text-gray-300 bg-gray-700 hover:bg-gray-600 rounded transition-all"
+                className="w-full mt-2 py-1.5 text-xs text-gray-300 bg-white/[0.05] hover:bg-white/10 rounded-lg border border-white/[0.06] transition-colors"
               >
                 Load More ({filteredKeychains.length} / {allFilteredKeychains.length})
               </button>

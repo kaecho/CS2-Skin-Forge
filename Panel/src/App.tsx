@@ -11,16 +11,27 @@ import StatusBar from './components/StatusBar';
 import SettingsPanel from './components/SettingsPanel';
 import AboutDialog from './components/AboutDialog';
 import DisclaimerDialog from './components/DisclaimerDialog';
+import TutorialDialog from './components/TutorialDialog';
+import UpdateBanner from './components/UpdateBanner';
 import { Loadout } from './utils/types';
 import { useT } from './i18n';
-import { api, type AppConfig, type PluginCheckResult } from './lib/api';
+import { api, type AppConfig, type PluginCheckResult, type UpdateCheckResult } from './lib/api';
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+const TUTORIAL_KEY = 'cs2skinmod.tutorial.done';
+const UPDATE_DISMISS_KEY = 'cs2skinmod.update.dismissed';
 
 const defaultLoadout: Loadout = {
   weaponPaints: {},
-  weaponStickers: {},
   weaponWears: {},
   weaponSeeds: {},
+  weaponPaintsCt: {},
+  weaponWearsCt: {},
+  weaponSeedsCt: {},
+  weaponPaintsT: {},
+  weaponWearsT: {},
+  weaponSeedsT: {},
+  weaponStickers: {},
   weaponKeychains: {},
   weaponNametags: {},
   weaponStatTrak: {},
@@ -28,6 +39,14 @@ const defaultLoadout: Loadout = {
   knifePaint: -1,
   knifeWear: 0.01,
   knifeSeed: 0,
+  knifeIndexCt: -1,
+  knifePaintCt: -1,
+  knifeWearCt: 0.01,
+  knifeSeedCt: 0,
+  knifeIndexT: -1,
+  knifePaintT: -1,
+  knifeWearT: 0.01,
+  knifeSeedT: 0,
   gloveIndexCt: -1,
   glovePaintCt: -1,
   gloveWearCt: 0.01,
@@ -46,13 +65,44 @@ const defaultLoadout: Loadout = {
   useRandom: true,
 };
 
+/** Migrate a saved loadout: copy legacy shared weapon/knife fields into the
+ *  per-team fields when the per-team fields are still empty (pre-v1.6.0 saves). */
+function migrateLoadout(saved: Partial<Loadout>): Partial<Loadout> {
+  const merged = { ...saved };
+  const hasTeamPaints =
+    Object.keys(saved.weaponPaintsCt ?? {}).length > 0 ||
+    Object.keys(saved.weaponPaintsT ?? {}).length > 0;
+  if (!hasTeamPaints && Object.keys(saved.weaponPaints ?? {}).length > 0) {
+    merged.weaponPaintsCt = { ...saved.weaponPaints };
+    merged.weaponPaintsT = { ...saved.weaponPaints };
+    merged.weaponWearsCt = { ...(saved.weaponWears ?? {}) };
+    merged.weaponWearsT = { ...(saved.weaponWears ?? {}) };
+    merged.weaponSeedsCt = { ...(saved.weaponSeeds ?? {}) };
+    merged.weaponSeedsT = { ...(saved.weaponSeeds ?? {}) };
+  }
+  const hasTeamKnife = (saved.knifeIndexCt ?? -1) >= 0 || (saved.knifeIndexT ?? -1) >= 0;
+  if (!hasTeamKnife && (saved.knifeIndex ?? -1) >= 0) {
+    merged.knifeIndexCt = saved.knifeIndex!;
+    merged.knifeIndexT = saved.knifeIndex!;
+    merged.knifePaintCt = saved.knifePaint ?? -1;
+    merged.knifePaintT = saved.knifePaint ?? -1;
+    merged.knifeWearCt = saved.knifeWear ?? 0.01;
+    merged.knifeWearT = saved.knifeWear ?? 0.01;
+    merged.knifeSeedCt = saved.knifeSeed ?? 0;
+    merged.knifeSeedT = saved.knifeSeed ?? 0;
+  }
+  return merged;
+}
+
 function App() {
   const { t } = useT();
   const [activeTab, setActiveTab] = useState('weapons');
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [_config, setConfig] = useState<AppConfig | null>(null);
   const [loadout, setLoadout] = useState<Loadout>({ ...defaultLoadout });
+  const [update, setUpdate] = useState<UpdateCheckResult | null>(null);
 
   const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showPluginWarning, setShowPluginWarning] = useState(false);
@@ -82,10 +132,21 @@ function App() {
         // Try to load saved loadout for slot 0 (local player)
         const saved = await api.loadLoadout(0);
         if (saved) {
-          setLoadout(prev => ({ ...prev, ...saved }));
+          setLoadout(prev => ({ ...prev, ...migrateLoadout(saved) }));
         }
       } catch (e) {
         console.error("Failed to initialize:", e);
+      }
+
+      // Non-blocking update check against the latest GitHub release
+      try {
+        const result = await api.checkUpdate();
+        const dismissed = localStorage.getItem(UPDATE_DISMISS_KEY);
+        if (result.updateAvailable && dismissed !== result.latestVersion) {
+          setUpdate(result);
+        }
+      } catch (e) {
+        console.warn("Update check failed:", e);
       }
     };
     init();
@@ -97,8 +158,19 @@ function App() {
 
   const handleApply = async () => {
     try {
-      // Save loadout to file for the addon to read
-      await api.saveLoadout(0, loadout);
+      // Mirror the CT per-team values into the legacy shared fields so an
+      // older deployed plugin still shows a sensible loadout.
+      const payload: Loadout = {
+        ...loadout,
+        weaponPaints: { ...loadout.weaponPaintsCt },
+        weaponWears: { ...loadout.weaponWearsCt },
+        weaponSeeds: { ...loadout.weaponSeedsCt },
+        knifeIndex: loadout.knifeIndexCt,
+        knifePaint: loadout.knifePaintCt,
+        knifeWear: loadout.knifeWearCt,
+        knifeSeed: loadout.knifeSeedCt,
+      };
+      await api.saveLoadout(0, payload);
       setStatus({ message: t("status.applied"), type: 'success' });
     } catch (e) {
       console.error("Failed to save loadout:", e);
@@ -122,6 +194,29 @@ function App() {
     setShowPluginWarning(false);
   };
 
+  const handleDismissUpdate = () => {
+    if (update) {
+      try { localStorage.setItem(UPDATE_DISMISS_KEY, update.latestVersion); } catch {}
+    }
+    setUpdate(null);
+  };
+
+  const handleDisclaimerAccepted = () => {
+    // First real launch: show the tutorial right after the disclaimer
+    try {
+      if (!localStorage.getItem(TUTORIAL_KEY)) {
+        setShowTutorial(true);
+      }
+    } catch {
+      setShowTutorial(true);
+    }
+  };
+
+  const handleTutorialClose = () => {
+    try { localStorage.setItem(TUTORIAL_KEY, 'true'); } catch {}
+    setShowTutorial(false);
+  };
+
   const renderPanel = () => {
     switch (activeTab) {
       case 'weapons':
@@ -142,19 +237,20 @@ function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden" data-tauri-drag-region>
       <Header onSettingsClick={() => setShowSettings(true)} onAboutClick={() => setShowAbout(true)} />
+      <UpdateBanner update={update} onDismiss={handleDismissUpdate} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
-          <div className="lg:col-span-3 space-y-4 overflow-hidden flex flex-col">
+          <div className="lg:col-span-3 space-y-3 overflow-hidden flex flex-col">
             <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-            <div className="flex-1 overflow-y-auto pr-2">
+            <div className="flex-1 overflow-y-auto pr-1.5">
               {renderPanel()}
             </div>
           </div>
 
-          <div className="space-y-4 overflow-y-auto">
+          <div className="space-y-3 overflow-y-auto">
             <PreviewPanel loadout={loadout} />
-            <div className="card space-y-3">
+            <div className="card space-y-2.5">
               <button onClick={handleApply} className="btn-primary w-full">
                 {t("btn.apply")}
               </button>
@@ -168,14 +264,14 @@ function App() {
 
       <StatusBar status={status} />
 
-      <footer className="text-center text-[10px] text-gray-600 py-1">
+      <footer className="text-center text-[10px] text-gray-600 py-1.5 border-t border-white/[0.04]">
         <span
           onClick={() => openUrl("https://github.com/emptysuns/CS2-Skin-Forge")}
           className="hover:text-gray-400 transition-colors cursor-pointer"
         >
           CS2 Skin Mod
         </span>
-        <span className="mx-1">•</span>
+        <span className="mx-1">·</span>
         <span>Open Source & Free · 开源免费软件 · 请勿上当受骗</span>
       </footer>
 
@@ -187,16 +283,18 @@ function App() {
       <AboutDialog
         isOpen={showAbout}
         onClose={() => setShowAbout(false)}
+        onOpenTutorial={() => setShowTutorial(true)}
       />
-      <DisclaimerDialog />
+      <TutorialDialog isOpen={showTutorial} onClose={handleTutorialClose} />
+      <DisclaimerDialog onAccepted={handleDisclaimerAccepted} />
 
       {/* Plugin Warning Dialog */}
       {showPluginWarning && pluginCheckResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="card w-full max-w-md mx-4 space-y-4">
+          <div className="card w-full max-w-md mx-4 space-y-4 !p-6">
             <div className="flex items-center gap-3">
               <span className="text-2xl">⚠️</span>
-              <h2 className="text-xl font-bold text-white">{t("setup.pluginWarning")}</h2>
+              <h2 className="text-lg font-bold text-white">{t("setup.pluginWarning")}</h2>
             </div>
             <p className="text-sm text-gray-300">
               {pluginCheckResult.missingFiles.length > 0
@@ -208,7 +306,7 @@ function App() {
                     : t("setup.pluginWarningMessage")}
             </p>
             {pluginCheckResult.missingFiles.length > 0 && (
-              <div className="text-xs text-red-400 bg-red-900/20 rounded-lg p-2">
+              <div className="text-xs text-red-300 bg-red-500/[0.08] border border-red-500/20 rounded-lg p-2.5">
                 {t("setup.pluginWarningMessage")}
                 <ul className="list-disc list-inside mt-1">
                   {pluginCheckResult.missingFiles.map(f => <li key={f}>{f}</li>)}
@@ -216,18 +314,18 @@ function App() {
               </div>
             )}
             {pluginCheckResult.versionMismatch && (
-              <div className="text-xs text-yellow-400 bg-yellow-900/20 rounded-lg p-2">
+              <div className="text-xs text-amber-300 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg p-2.5">
                 {t("status.pluginVersionMismatch")}
                 <br />
                 Panel: v{pluginCheckResult.panelVersion} | Deployed: {pluginCheckResult.deployedVersion || t("common.error")}
               </div>
             )}
             {!pluginCheckResult.counterstrikesharpInstalled && (
-              <div className="text-xs text-yellow-400 bg-yellow-900/20 rounded-lg p-2">
+              <div className="text-xs text-amber-300 bg-amber-500/[0.08] border border-amber-500/20 rounded-lg p-2.5">
                 CounterStrikeSharp is not installed. The panel will automatically download and install it when you deploy addons.
               </div>
             )}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-3 pt-1">
               <button onClick={handleDismissPluginWarning} className="btn-secondary flex-1">
                 {t("setup.remindLater")}
               </button>

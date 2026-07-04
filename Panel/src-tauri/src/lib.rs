@@ -45,7 +45,7 @@ pub struct StatTrakInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Loadout {
-    #[serde(rename = "weaponPaints")]
+    #[serde(rename = "weaponPaints", default)]
     pub weapon_paints: std::collections::HashMap<u16, i32>,
     #[serde(rename = "weaponStickers", default)]
     pub weapon_stickers: std::collections::HashMap<u16, Vec<StickerInfo>>,
@@ -53,20 +53,50 @@ pub struct Loadout {
     pub weapon_wears: std::collections::HashMap<u16, f32>,
     #[serde(rename = "weaponSeeds", default)]
     pub weapon_seeds: std::collections::HashMap<u16, i32>,
+    // Per-team weapon skins (v1.6.0+)
+    #[serde(rename = "weaponPaintsCt", default)]
+    pub weapon_paints_ct: std::collections::HashMap<u16, i32>,
+    #[serde(rename = "weaponWearsCt", default)]
+    pub weapon_wears_ct: std::collections::HashMap<u16, f32>,
+    #[serde(rename = "weaponSeedsCt", default)]
+    pub weapon_seeds_ct: std::collections::HashMap<u16, i32>,
+    #[serde(rename = "weaponPaintsT", default)]
+    pub weapon_paints_t: std::collections::HashMap<u16, i32>,
+    #[serde(rename = "weaponWearsT", default)]
+    pub weapon_wears_t: std::collections::HashMap<u16, f32>,
+    #[serde(rename = "weaponSeedsT", default)]
+    pub weapon_seeds_t: std::collections::HashMap<u16, i32>,
     #[serde(rename = "weaponKeychains", default)]
     pub weapon_keychains: std::collections::HashMap<u16, KeychainInfo>,
     #[serde(rename = "weaponNametags", default)]
     pub weapon_nametags: std::collections::HashMap<u16, String>,
     #[serde(rename = "weaponStatTrak", default)]
     pub weapon_stattrak: std::collections::HashMap<u16, StatTrakInfo>,
-    #[serde(rename = "knifeIndex")]
+    #[serde(rename = "knifeIndex", default = "default_glove")]
     pub knife_index: i32,
-    #[serde(rename = "knifePaint")]
+    #[serde(rename = "knifePaint", default = "default_glove")]
     pub knife_paint: i32,
     #[serde(rename = "knifeWear", default = "default_wear")]
     pub knife_wear: f32,
     #[serde(rename = "knifeSeed", default)]
     pub knife_seed: i32,
+    // Per-team knives (v1.6.0+)
+    #[serde(rename = "knifeIndexCt", default = "default_glove")]
+    pub knife_index_ct: i32,
+    #[serde(rename = "knifePaintCt", default = "default_glove")]
+    pub knife_paint_ct: i32,
+    #[serde(rename = "knifeWearCt", default = "default_wear")]
+    pub knife_wear_ct: f32,
+    #[serde(rename = "knifeSeedCt", default)]
+    pub knife_seed_ct: i32,
+    #[serde(rename = "knifeIndexT", default = "default_glove")]
+    pub knife_index_t: i32,
+    #[serde(rename = "knifePaintT", default = "default_glove")]
+    pub knife_paint_t: i32,
+    #[serde(rename = "knifeWearT", default = "default_wear")]
+    pub knife_wear_t: f32,
+    #[serde(rename = "knifeSeedT", default)]
+    pub knife_seed_t: i32,
     // Per-team gloves
     #[serde(rename = "gloveIndexCt", default = "default_glove")]
     pub glove_index_ct: i32,
@@ -324,6 +354,74 @@ fn get_loadout_path_from_config() -> Option<PathBuf> {
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to CS2 Skin Mod.", name)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheckResult {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub release_url: String,
+    pub release_notes: String,
+}
+
+/// Compare two dotted version strings (e.g. "1.5.16" vs "1.6.0").
+fn is_newer_version(latest: &str, current: &str) -> bool {
+    let parse = |v: &str| -> Vec<u64> {
+        v.trim_start_matches('v')
+            .split('.')
+            .map(|p| {
+                p.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse::<u64>()
+                    .unwrap_or(0)
+            })
+            .collect()
+    };
+    let l = parse(latest);
+    let c = parse(current);
+    for i in 0..l.len().max(c.len()) {
+        let lv = l.get(i).copied().unwrap_or(0);
+        let cv = c.get(i).copied().unwrap_or(0);
+        if lv != cv {
+            return lv > cv;
+        }
+    }
+    false
+}
+
+#[tauri::command]
+fn check_update() -> Result<UpdateCheckResult, String> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let api_url = "https://api.github.com/repos/emptysuns/CS2-Skin-Forge/releases/latest";
+    let resp = ureq::get(api_url)
+        .set("User-Agent", "CS2-Skin-Forge/update-check")
+        .timeout(std::time::Duration::from_secs(10))
+        .call()
+        .map_err(|e| format!("Failed to query GitHub API: {}", e))?;
+    let json: serde_json::Value = resp
+        .into_json()
+        .map_err(|e| format!("Failed to parse API response: {}", e))?;
+    let tag = json["tag_name"]
+        .as_str()
+        .ok_or_else(|| "Missing tag_name in release".to_string())?;
+    let latest_version = tag.trim_start_matches('v').to_string();
+    let release_url = json["html_url"]
+        .as_str()
+        .unwrap_or("https://github.com/emptysuns/CS2-Skin-Forge/releases/latest")
+        .to_string();
+    let release_notes = json["body"].as_str().unwrap_or("").to_string();
+    let update_available = is_newer_version(&latest_version, &current_version);
+
+    Ok(UpdateCheckResult {
+        current_version,
+        latest_version,
+        update_available,
+        release_url,
+        release_notes,
+    })
 }
 
 #[tauri::command]
@@ -646,7 +744,8 @@ pub fn run() {
             load_loadout,
             detect_cs2_path,
             check_plugin_files,
-            deploy_addons
+            deploy_addons,
+            check_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

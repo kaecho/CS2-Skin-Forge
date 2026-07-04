@@ -122,13 +122,13 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
               <button
                 key={l.code}
                 onClick={() => changeLanguage(l.code)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
                   lang === l.code
-                    ? "bg-orange-500/20 border border-orange-500/50 text-orange-300"
-                    : "bg-gray-800/50 border border-gray-700/50 text-gray-300 hover:bg-gray-700/50"
+                    ? "bg-amber-500/[0.12] border border-amber-500/40 text-amber-200"
+                    : "bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08]"
                 }`}
               >
-                <span className="text-xs font-mono bg-gray-700 px-1 rounded">{l.flag}</span>
+                <span className="text-xs font-mono bg-black/30 px-1 rounded">{l.flag}</span>
                 <span>{l.label}</span>
               </button>
             ))}
@@ -147,7 +147,7 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
               value={config.cs2Path ?? ""}
               onChange={(e) => setConfig(prev => ({ ...prev, cs2Path: e.target.value || null }))}
               placeholder="/path/to/game/csgo"
-              className="flex-1 bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500/50"
+              className="input-field flex-1"
             />
             <button
               onClick={handleDetect}
@@ -183,7 +183,7 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
 
         {/* Plugin Status */}
         {pluginStatus && (
-          <div className="space-y-1.5 px-3 py-2 bg-gray-800/30 rounded-lg border border-gray-700/30">
+          <div className="space-y-1.5 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.06]">
             <p className="text-xs font-medium text-gray-400">Plugin Status</p>
             <div className="flex items-center gap-2 text-xs">
               <span className={pluginStatus.counterstrikesharpInstalled ? "text-green-400" : "text-red-400"}>

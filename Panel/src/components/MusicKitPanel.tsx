@@ -23,16 +23,10 @@ export default function MusicKitPanel({ loadout, updateLoadout }: MusicKitPanelP
     <div className="space-y-3">
       <button
         onClick={handleRandom}
-        className={`
-          card w-full text-center py-3 transition-all duration-200
-          ${loadout.musicKit === -1
-            ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-900/20'
-            : 'hover:border-gray-500'
-          }
-        `}
+        className={`card card-hover w-full text-center py-3 ${loadout.musicKit === -1 ? 'card-selected' : ''}`}
       >
         <div className="text-sm font-semibold text-white">{t("preview.random")}</div>
-        <div className="text-xs text-gray-400 mt-0.5">{t("music.title")}</div>
+        <div className="text-xs text-gray-500 mt-0.5">{t("music.title")}</div>
       </button>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
@@ -40,13 +34,7 @@ export default function MusicKitPanel({ loadout, updateLoadout }: MusicKitPanelP
           <button
             key={kit.id}
             onClick={() => handleMusicKitSelect(kit.id)}
-            className={`
-              card p-2.5 text-left transition-all duration-200
-              ${loadout.musicKit === kit.id
-                ? 'ring-2 ring-amber-500 border-amber-500 bg-amber-900/20'
-                : 'hover:border-gray-500'
-              }
-            `}
+            className={`card card-hover !p-2.5 text-left ${loadout.musicKit === kit.id ? 'card-selected' : ''}`}
           >
             <div className="flex items-center space-x-2">
               {kit.image ? (

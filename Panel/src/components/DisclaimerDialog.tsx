@@ -4,7 +4,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 const DISCLAIMER_KEY = 'cs2skinmod.disclaimer.accepted';
 
-export default function DisclaimerDialog() {
+interface DisclaimerDialogProps {
+  onAccepted?: () => void;
+}
+
+export default function DisclaimerDialog({ onAccepted }: DisclaimerDialogProps) {
   const { lang } = useT();
   const [show, setShow] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -20,6 +24,7 @@ export default function DisclaimerDialog() {
   const handleConfirm = () => {
     try { localStorage.setItem(DISCLAIMER_KEY, 'true'); } catch {}
     setShow(false);
+    onAccepted?.();
   };
 
   if (!show) return null;

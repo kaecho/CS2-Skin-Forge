@@ -1,7 +1,7 @@
 {
   "name": "cs2-skin-mod-panel",
   "private": true,
-  "version": "1.5.16",
+  "version": "1.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

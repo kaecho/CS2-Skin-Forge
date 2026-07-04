@@ -34,12 +34,21 @@ export const EN = {
   "weapon.keychain": "Keychain / Charm",
   "weapon.keychainSearch": "Search keychains...",
 
+  // Team selector (weapons / knives per-team skins)
+  "team.ct": "CT",
+  "team.t": "T",
+  "team.copyToT": "Copy to T",
+  "team.copyToCt": "Copy to CT",
+  "team.copied": "Copied!",
+
   // Knife Panel
   "knife.title": "Knife Selection",
   "knife.selectType": "Knife Type",
   "knife.selectPaint": "Knife Paint",
   "knife.wear": "Wear",
   "knife.seed": "Seed",
+  "knife.ct": "CT Knife",
+  "knife.t": "T Knife",
 
   // Glove Panel
   "glove.title": "Glove Selection",
@@ -109,6 +118,34 @@ export const EN = {
   "about.description": "Open-source CS2 skin customization tool. Free and local-only.",
   "about.github": "GitHub Repository",
   "about.openInBrowser": "Open in Browser",
+  "about.credits": "Credits & Related Projects",
+
+  // Update check
+  "update.available": "New version available: v{version}",
+  "update.download": "Download",
+  "update.dismiss": "Dismiss",
+  "update.check": "Check for Updates",
+  "update.checking": "Checking...",
+  "update.upToDate": "You're on the latest version.",
+  "update.failed": "Update check failed. Please try again later.",
+
+  // Tutorial
+  "tutorial.title": "Getting Started",
+  "tutorial.open": "View Tutorial",
+  "tutorial.next": "Next",
+  "tutorial.prev": "Back",
+  "tutorial.skip": "Skip",
+  "tutorial.done": "Get Started",
+  "tutorial.step1.title": "Set your CS2 path",
+  "tutorial.step1.desc": "Open Settings (gear icon) and set the CS2 installation path — the game/csgo folder. Use Auto Detect to find it automatically.",
+  "tutorial.step2.title": "Deploy the addons",
+  "tutorial.step2.desc": "Click \"Deploy Addons\" in Settings. This installs CounterStrikeSharp (if missing) and copies the skin plugin into your CS2 directory.",
+  "tutorial.step3.title": "Add the -insecure launch option",
+  "tutorial.step3.desc": "In Steam, right-click CS2 → Properties → Launch Options, and add: -insecure. Note: this prevents joining VAC-secured servers.",
+  "tutorial.step4.title": "Customize your loadout",
+  "tutorial.step4.desc": "Pick skins for weapons, knives, gloves, agents and music kits. Weapon and knife skins can be set separately for CT and T. Click \"Apply Loadout\" to save.",
+  "tutorial.step5.title": "Play and enjoy",
+  "tutorial.step5.desc": "Launch CS2 and start a local match. Respawn to see your skins. In-game commands: skin_menu (reload loadout), skin_random, skin_reset.",
 
   // Setup reminder
   "setup.title": "Setup Required",

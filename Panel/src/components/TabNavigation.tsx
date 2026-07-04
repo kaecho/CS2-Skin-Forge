@@ -44,17 +44,17 @@ export default function TabNavigation({ activeTab, setActiveTab }: TabNavigation
   const { t } = useT();
 
   return (
-    <nav className="flex space-x-1 bg-gray-800/50 p-1 rounded-lg border border-gray-700">
+    <nav className="flex gap-1 bg-black/30 p-1 rounded-xl border border-white/[0.06]">
       {tabs.map(tab => (
         <button
           key={tab.id}
           onClick={() => setActiveTab(tab.id)}
           className={`
-            flex-1 flex items-center justify-center space-x-1.5 py-2 px-3 rounded-md
-            transition-all duration-200 text-sm font-medium
+            flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg
+            transition-colors duration-150 text-sm font-medium
             ${activeTab === tab.id
-              ? 'bg-gradient-to-r from-amber-600 to-orange-500 text-white shadow-lg'
-              : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+              ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-white/[0.06]'
             }
           `}
         >

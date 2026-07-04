@@ -91,6 +91,9 @@ public static class WeaponService
             weapon.FallbackPaintKit = paintKit;
             weapon.FallbackSeed = seed;
             weapon.FallbackWear = wear;
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
 
             setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture prefab", paintKit);
             setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture seed", (float)seed);
@@ -106,16 +109,17 @@ public static class WeaponService
                 item.CustomName = nametag;
             }
 
-            // Apply StatTrak
+            // Apply StatTrak (kill count stored as uint bits in float storage)
             if (statTrak != null && statTrak.Enabled)
             {
+                uint count = (uint)Math.Max(0, statTrak.Count);
                 item.EntityQuality = 9; // StatTrak quality
-                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", 80);
-                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", 0);
-                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", 80);
-                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", 0);
-                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater user 1", (float)statTrak.Count);
-                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater user 1", (float)statTrak.Count);
+                weapon.FallbackStatTrak = (int)count;
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
+                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", UIntToFloat(0));
+                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
+                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", UIntToFloat(0));
             }
 
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
@@ -184,6 +188,9 @@ public static class WeaponService
                     w.FallbackPaintKit = paintKit;
                     w.FallbackSeed = knifeSeed;
                     w.FallbackWear = knifeWear;
+                    Utilities.SetStateChanged(w, "CEconEntity", "m_nFallbackPaintKit");
+                    Utilities.SetStateChanged(w, "CEconEntity", "m_nFallbackSeed");
+                    Utilities.SetStateChanged(w, "CEconEntity", "m_flFallbackWear");
 
                     setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture prefab", paintKit);
                     setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture seed", (float)knifeSeed);
