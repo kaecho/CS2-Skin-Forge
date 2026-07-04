@@ -9,6 +9,7 @@ import { skinNamesEn } from '../data/skinNamesEn';
 import { useT } from '../i18n';
 import TeamToggle from './TeamToggle';
 import WearSeedControls from './WearSeedControls';
+import SkinPickerModal from './SkinPickerModal';
 
 interface WeaponPanelProps {
   loadout: Loadout;
@@ -20,6 +21,7 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
   const [team, setTeam] = useState<Team>('ct');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedWeapon, setSelectedWeapon] = useState<number | null>(null);
+  const [showSkinModal, setShowSkinModal] = useState(false);
   const [activeStickerSlot, setActiveStickerSlot] = useState(0);
   const [stickerSearch, setStickerSearch] = useState('');
   const [stickerLimit, setStickerLimit] = useState(100);
@@ -115,6 +117,14 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
     });
   };
 
+  const handleStickerPositionChange = (defindex: number, slot: number, field: string, value: number) => {
+    const existing = loadout.weaponStickers[defindex] ? [...loadout.weaponStickers[defindex]] : [{ id: 0 }, { id: 0 }, { id: 0 }, { id: 0 }, { id: 0 }];
+    existing[slot] = { ...existing[slot], [field]: value };
+    updateLoadout({
+      weaponStickers: { ...loadout.weaponStickers, [defindex]: existing },
+    });
+  };
+
   const clearStickerSlot = (defindex: number, slot: number) => {
     const existing = loadout.weaponStickers[defindex] ? [...loadout.weaponStickers[defindex]] : [{ id: 0 }, { id: 0 }, { id: 0 }, { id: 0 }, { id: 0 }];
     existing[slot] = { id: 0 };
@@ -143,6 +153,13 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
     const newKeychains = { ...loadout.weaponKeychains };
     delete newKeychains[defindex];
     updateLoadout({ weaponKeychains: newKeychains });
+  };
+
+  const handleKeychainPositionChange = (defindex: number, field: string, value: number) => {
+    const existing = loadout.weaponKeychains[defindex] || { id: 0, offsetX: 0, offsetY: 0, offsetZ: 0, seed: 0 };
+    updateLoadout({
+      weaponKeychains: { ...loadout.weaponKeychains, [defindex]: { ...existing, [field]: value } },
+    });
   };
 
   // Nametag handlers
@@ -285,22 +302,44 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
               )}
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto">
-            {weaponPaints[selectedWeapon].map(paint => (
-              <button key={paint.id} onClick={() => handlePaintSelect(selectedWeapon, paint.id)}
-                className={`flex flex-col items-center p-2 rounded-lg text-xs font-medium transition-colors duration-150 border ${
-                  paints[selectedWeapon] === paint.id
-                    ? 'bg-amber-500/[0.12] text-amber-200 border-amber-500/50'
-                    : 'bg-white/[0.04] text-gray-300 hover:bg-white/[0.08] border-white/[0.05]'
-                }`}>
-                {paint.image && (
-                  <img src={paint.image} alt={paint.name}
-                    className="w-full h-12 object-contain mb-1"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                )}
-                <span className="truncate w-full text-center">{getPaintName(selectedWeapon, paint.id, paint.name)}</span>
+          {/* Selected skin preview + Choose Skin button */}
+          <div className="mb-3">
+            {paints[selectedWeapon] !== undefined ? (
+              <div className="flex items-center gap-3 p-2.5 bg-amber-500/[0.08] rounded-lg border border-amber-500/20">
+                {(() => {
+                  const paintId = paints[selectedWeapon];
+                  const paint = weaponPaints[selectedWeapon].find(p => p.id === paintId);
+                  return (
+                    <>
+                      {paint?.image && (
+                        <img src={paint.image} alt={paint.name}
+                          className="w-14 h-14 object-contain rounded"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-amber-200 truncate">
+                          {paint ? getPaintName(selectedWeapon, paint.id, paint.name) : `Paint #${paintId}`}
+                        </div>
+                        <div className="text-[10px] text-amber-400/60">Selected skin</div>
+                      </div>
+                    </>
+                  );
+                })()}
+                <button
+                  onClick={() => setShowSkinModal(true)}
+                  className="text-xs text-amber-300 hover:text-amber-100 px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 transition-colors shrink-0"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowSkinModal(true)}
+                className="w-full py-3 text-sm text-gray-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg border border-dashed border-white/[0.1] hover:border-amber-500/30 transition-all"
+              >
+                + Choose Skin
               </button>
-            ))}
+            )}
           </div>
 
           {/* Wear & Seed controls (with manual input) */}
@@ -437,6 +476,62 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 Load More ({filteredStickers.length} / {allFilteredStickers.length})
               </button>
             )}
+
+            {/* Sticker position & appearance controls */}
+            {(() => {
+              const stickers = loadout.weaponStickers[selectedWeapon] || [];
+              const current = stickers[activeStickerSlot];
+              if (current?.id > 0) {
+                return (
+                  <div className="mt-2 p-2.5 bg-black/20 rounded-lg border border-white/[0.04] space-y-2">
+                    <h5 className="text-xs font-semibold text-gray-300">Sticker #{activeStickerSlot + 1} Position</h5>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Offset X</label>
+                        <input type="range" min="-2" max="2" step="0.01"
+                          value={current.offsetX ?? 0}
+                          onChange={(e) => handleStickerPositionChange(selectedWeapon, activeStickerSlot, 'offsetX', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.offsetX ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Offset Y</label>
+                        <input type="range" min="-2" max="2" step="0.01"
+                          value={current.offsetY ?? 0}
+                          onChange={(e) => handleStickerPositionChange(selectedWeapon, activeStickerSlot, 'offsetY', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.offsetY ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Scale</label>
+                        <input type="range" min="0.1" max="5" step="0.01"
+                          value={current.scale ?? 1}
+                          onChange={(e) => handleStickerPositionChange(selectedWeapon, activeStickerSlot, 'scale', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.scale ?? 1).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Rotation</label>
+                        <input type="range" min="-180" max="180" step="1"
+                          value={current.rotation ?? 0}
+                          onChange={(e) => handleStickerPositionChange(selectedWeapon, activeStickerSlot, 'rotation', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{current.rotation ?? 0}°</span>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-gray-500 block">Wear</label>
+                        <input type="range" min="0" max="1" step="0.01"
+                          value={current.wear ?? 0}
+                          onChange={(e) => handleStickerPositionChange(selectedWeapon, activeStickerSlot, 'wear', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.wear ?? 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {/* Keychain Section */}
@@ -503,6 +598,52 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
                 Load More ({filteredKeychains.length} / {allFilteredKeychains.length})
               </button>
             )}
+
+            {/* Keychain position controls */}
+            {(() => {
+              const current = loadout.weaponKeychains[selectedWeapon];
+              if (current?.id > 0) {
+                return (
+                  <div className="mt-2 p-2.5 bg-black/20 rounded-lg border border-white/[0.04] space-y-2">
+                    <h5 className="text-xs font-semibold text-gray-300">Keychain Position</h5>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Offset X</label>
+                        <input type="range" min="-5" max="5" step="0.01"
+                          value={current.offsetX ?? 0}
+                          onChange={(e) => handleKeychainPositionChange(selectedWeapon, 'offsetX', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.offsetX ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Offset Y</label>
+                        <input type="range" min="-5" max="5" step="0.01"
+                          value={current.offsetY ?? 0}
+                          onChange={(e) => handleKeychainPositionChange(selectedWeapon, 'offsetY', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.offsetY ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Offset Z</label>
+                        <input type="range" min="-5" max="5" step="0.01"
+                          value={current.offsetZ ?? 0}
+                          onChange={(e) => handleKeychainPositionChange(selectedWeapon, 'offsetZ', parseFloat(e.target.value))}
+                          className="w-full h-1 accent-amber-500" />
+                        <span className="text-[10px] text-gray-500">{(current.offsetZ ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Seed</label>
+                        <input type="number" min="0" max="9999"
+                          value={current.seed ?? 0}
+                          onChange={(e) => handleKeychainPositionChange(selectedWeapon, 'seed', parseInt(e.target.value) || 0)}
+                          className="num-input !w-full" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
       )}
@@ -511,6 +652,17 @@ export default function WeaponPanel({ loadout, updateLoadout }: WeaponPanelProps
         <div className="card text-center py-6">
           <p className="text-sm text-gray-400">{t("weapon.noPaint")}</p>
         </div>
+      )}
+
+      {/* Skin Picker Modal */}
+      {showSkinModal && selectedWeapon && weaponPaints[selectedWeapon] && (
+        <SkinPickerModal
+          title={`${getDisplayName(weapons.find(w => w.defindex === selectedWeapon)!)} - ${team === 'ct' ? t('team.ct') : t('team.t')}`}
+          items={weaponPaints[selectedWeapon].map(p => ({ id: p.id, name: getPaintName(selectedWeapon, p.id, p.name), image: p.image }))}
+          selectedId={paints[selectedWeapon] ?? null}
+          onSelect={(id) => { handlePaintSelect(selectedWeapon, id); setShowSkinModal(false); }}
+          onClose={() => setShowSkinModal(false)}
+        />
       )}
     </div>
   );

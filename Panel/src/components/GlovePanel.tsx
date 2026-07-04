@@ -5,6 +5,7 @@ import { getGloveLocalizedName, getGlovePaintLocalizedName } from '../data/local
 import { useT } from '../i18n';
 import TeamToggle from './TeamToggle';
 import WearSeedControls from './WearSeedControls';
+import SkinPickerModal from './SkinPickerModal';
 
 interface GlovePanelProps {
   loadout: Loadout;
@@ -18,6 +19,7 @@ export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) 
     const idx = loadout.gloveIndexCt;
     return idx >= 0 ? idx : null;
   });
+  const [showSkinModal, setShowSkinModal] = useState(false);
 
   const getIndexField = () => selectedTeam === 'ct' ? 'gloveIndexCt' : 'gloveIndexT';
   const getPaintField = () => selectedTeam === 'ct' ? 'glovePaintCt' : 'glovePaintT';
@@ -163,29 +165,56 @@ export default function GlovePanel({ loadout, updateLoadout }: GlovePanelProps) 
             />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {gloves[selectedGlove].paints.map(paint => (
-              <button
-                key={paint.id}
-                onClick={() => handlePaintSelect(paint.id)}
-                className={`flex flex-col items-center p-2 rounded-lg text-xs font-medium transition-colors duration-150 border ${
-                  currentPaint === paint.id
-                    ? 'bg-amber-500/[0.12] text-amber-200 border-amber-500/50'
-                    : 'bg-white/[0.04] text-gray-300 hover:bg-white/[0.08] border-white/[0.05]'
-                }`}
-              >
-                {paint.image && (
-                  <img src={paint.image} alt={paint.name}
-                    className="w-full h-12 object-contain mb-1"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                )}
-                <span className="truncate w-full text-center">
-                  {getGlovePaintLocalizedName(gloves[selectedGlove].defindex, paint.id, paint.name, lang)}
-                </span>
+          {/* Selected paint preview + Choose Skin button */}
+          <div className="mb-4">
+            {currentPaint >= 0 ? (
+              <div className="flex items-center gap-3 p-2.5 bg-amber-500/[0.08] rounded-lg border border-amber-500/20">
+                {(() => {
+                  const paint = gloves[selectedGlove].paints.find(p => p.id === currentPaint);
+                  return (
+                    <>
+                      {paint?.image && (
+                        <img src={paint.image} alt={paint.name}
+                          className="w-14 h-14 object-contain rounded"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-amber-200 truncate">
+                          {getGlovePaintLocalizedName(gloves[selectedGlove].defindex, currentPaint, paint?.name || `Paint #${currentPaint}`, lang)}
+                        </div>
+                        <div className="text-[10px] text-amber-400/60">Selected skin</div>
+                      </div>
+                    </>
+                  );
+                })()}
+                <button onClick={() => setShowSkinModal(true)}
+                  className="text-xs text-amber-300 hover:text-amber-100 px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 transition-colors shrink-0">
+                  Change
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSkinModal(true)}
+                className="w-full py-3 text-sm text-gray-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg border border-dashed border-white/[0.1] hover:border-amber-500/30 transition-all">
+                + Choose Skin
               </button>
-            ))}
+            )}
           </div>
         </div>
+      )}
+
+      {/* Skin Picker Modal */}
+      {showSkinModal && selectedGlove !== null && (
+        <SkinPickerModal
+          title={`${getGloveLocalizedName(gloves[selectedGlove].defindex, gloves[selectedGlove].name, lang)} - ${selectedTeam === 'ct' ? t('team.ct') : t('team.t')}`}
+          items={gloves[selectedGlove].paints.map(p => ({
+            id: p.id,
+            name: getGlovePaintLocalizedName(gloves[selectedGlove].defindex, p.id, p.name, lang),
+            image: p.image,
+          }))}
+          selectedId={currentPaint >= 0 ? currentPaint : null}
+          onSelect={(id) => { handlePaintSelect(id); setShowSkinModal(false); }}
+          onClose={() => setShowSkinModal(false)}
+        />
       )}
     </div>
   );

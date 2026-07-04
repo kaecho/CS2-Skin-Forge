@@ -102,6 +102,7 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [_config, setConfig] = useState<AppConfig | null>(null);
   const [loadout, setLoadout] = useState<Loadout>({ ...defaultLoadout });
+  const [isLoading, setIsLoading] = useState(true);
   const [update, setUpdate] = useState<UpdateCheckResult | null>(null);
 
   const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -148,6 +149,7 @@ function App() {
       } catch (e) {
         console.warn("Update check failed:", e);
       }
+      setIsLoading(false);
     };
     init();
   }, []);
@@ -240,6 +242,14 @@ function App() {
       <UpdateBanner update={update} onDismiss={handleDismissUpdate} />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-4 overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center space-y-3">
+              <div className="w-8 h-8 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin mx-auto" />
+              <p className="text-sm text-gray-500">{t("common.loading")}</p>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
           <div className="lg:col-span-3 space-y-3 overflow-hidden flex flex-col">
             <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -260,6 +270,7 @@ function App() {
             </div>
           </div>
         </div>
+        )}
       </main>
 
       <StatusBar status={status} />

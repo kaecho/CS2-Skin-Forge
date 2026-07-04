@@ -19,7 +19,7 @@ namespace PlayerSkinMod;
 public class PlayerSkinModPlugin : BasePlugin
 {
     public override string ModuleName        => "PlayerSkinMod";
-    public override string ModuleVersion     => "1.6.0";
+    public override string ModuleVersion     => "1.7.0";
     public override string ModuleAuthor      => "CS2-Skin-local-mod";
     public override string ModuleDescription => "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally";
 
@@ -111,6 +111,7 @@ public class PlayerSkinModPlugin : BasePlugin
         });
 
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+        RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         RegisterEventHandler<EventRoundMvp>(OnRoundMvp, HookMode.Pre);
         RegisterEventHandler<EventPlayerTeam>(OnPlayerTeam);
         RegisterEventHandler<EventItemPickup>(OnItemPickup);
@@ -340,6 +341,52 @@ public class PlayerSkinModPlugin : BasePlugin
                 ReapplyHeldWeaponSkins(player, pawn);
             });
         });
+
+        return HookResult.Continue;
+    }
+
+    [GameEventHandler]
+    public HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
+    {
+        var attacker = @event.Attacker;
+        if (attacker == null || !attacker.IsValid || attacker.IsBot)
+            return HookResult.Continue;
+
+        var pawn = attacker.PlayerPawn?.Value;
+        if (pawn == null || !pawn.IsValid) return HookResult.Continue;
+
+        var weapon = pawn.WeaponServices?.ActiveWeapon?.Value;
+        if (weapon == null || !weapon.IsValid) return HookResult.Continue;
+
+        var name = weapon.DesignerName;
+        if (string.IsNullOrEmpty(name) || name.Contains("knife") || name == "weapon_bayonet")
+            return HookResult.Continue;
+
+        ushort defIndex = weapon.AttributeManager?.Item?.ItemDefinitionIndex ?? 0;
+        if (defIndex == 0) return HookResult.Continue;
+
+        int slot = attacker.Slot;
+        var loadout = GetOrCreateLoadout(slot);
+
+        if (!loadout.WeaponStatTrak.TryGetValue(defIndex, out var statTrak) || !statTrak.Enabled)
+            return HookResult.Continue;
+
+        statTrak.Count++;
+        Logger.LogInformation($"[PlayerSkinMod] StatTrak: {attacker.PlayerName} kill with defIndex {defIndex}, count = {statTrak.Count}");
+
+        if (_setAttrByName != null)
+        {
+            var item = weapon.AttributeManager?.Item;
+            if (item != null)
+            {
+                uint count = (uint)Math.Max(0, statTrak.Count);
+                weapon.FallbackStatTrak = (int)count;
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+                _setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
+                _setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
+            }
+        }
 
         return HookResult.Continue;
     }

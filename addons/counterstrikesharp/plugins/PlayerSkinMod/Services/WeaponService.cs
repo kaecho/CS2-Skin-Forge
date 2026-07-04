@@ -218,6 +218,7 @@ public static class WeaponService
         }
         catch (Exception ex)
         {
+            // Knife replacement failed silently — common with invalid defindex or timing issues
         }
     }
 

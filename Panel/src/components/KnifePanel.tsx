@@ -5,6 +5,7 @@ import { knifeSkinsByType } from '../data/knifeSkins';
 import { useT } from '../i18n';
 import TeamToggle from './TeamToggle';
 import WearSeedControls from './WearSeedControls';
+import SkinPickerModal from './SkinPickerModal';
 
 interface KnifePanelProps {
   loadout: Loadout;
@@ -16,6 +17,7 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
   const isChinese = lang === 'schinese' || lang === 'tchinese';
   const [team, setTeam] = useState<Team>('ct');
   const [copied, setCopied] = useState(false);
+  const [showSkinModal, setShowSkinModal] = useState(false);
 
   // Per-team field accessors
   const indexKey = team === 'ct' ? 'knifeIndexCt' : 'knifeIndexT';
@@ -144,27 +146,52 @@ export default function KnifePanel({ loadout, updateLoadout }: KnifePanelProps) 
             />
           </div>
 
-          {/* Skin grid - per knife type */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
-            {skinsForSelectedKnife.map(paint => (
-              <button
-                key={paint.id}
-                onClick={() => handlePaintSelect(paint.id)}
-                className={`flex flex-col items-center p-2 rounded-lg text-xs font-medium transition-colors duration-150 border ${
-                  currentPaint === paint.id
-                    ? 'bg-amber-500/[0.12] text-amber-200 border-amber-500/50'
-                    : 'bg-white/[0.04] text-gray-300 hover:bg-white/[0.08] border-white/[0.05]'
-                }`}
-              >
-                <img src={paint.image} alt={paint.name}
-                  className="w-full h-12 object-contain mb-1"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-                <span className="truncate w-full text-center">{paint.name}</span>
+          {/* Selected skin preview + Choose Skin button */}
+          <div className="mb-4">
+            {currentPaint >= 0 ? (
+              <div className="flex items-center gap-3 p-2.5 bg-amber-500/[0.08] rounded-lg border border-amber-500/20">
+                {(() => {
+                  const paint = skinsForSelectedKnife.find(p => p.id === currentPaint);
+                  return (
+                    <>
+                      {paint?.image && (
+                        <img src={paint.image} alt={paint.name}
+                          className="w-14 h-14 object-contain rounded"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-amber-200 truncate">
+                          {paint?.name || `Paint #${currentPaint}`}
+                        </div>
+                        <div className="text-[10px] text-amber-400/60">Selected skin</div>
+                      </div>
+                    </>
+                  );
+                })()}
+                <button onClick={() => setShowSkinModal(true)}
+                  className="text-xs text-amber-300 hover:text-amber-100 px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 transition-colors shrink-0">
+                  Change
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSkinModal(true)}
+                className="w-full py-3 text-sm text-gray-300 bg-white/[0.04] hover:bg-white/[0.08] rounded-lg border border-dashed border-white/[0.1] hover:border-amber-500/30 transition-all">
+                + Choose Skin
               </button>
-            ))}
+            )}
           </div>
         </div>
+      )}
+
+      {/* Skin Picker Modal */}
+      {showSkinModal && currentIndex >= 0 && (
+        <SkinPickerModal
+          title={`${getKnifeName(currentIndex)} - ${team === 'ct' ? t('team.ct') : t('team.t')}`}
+          items={skinsForSelectedKnife.map(p => ({ id: p.id, name: p.name, image: p.image }))}
+          selectedId={currentPaint >= 0 ? currentPaint : null}
+          onSelect={(id) => { handlePaintSelect(id); setShowSkinModal(false); }}
+          onClose={() => setShowSkinModal(false)}
+        />
       )}
     </div>
   );
