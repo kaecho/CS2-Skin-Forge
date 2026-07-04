@@ -3,6 +3,7 @@
 A local-only skin customization plugin for Counter-Strike 2 that allows players to customize weapon skins, knives, gloves, agent models, and music kits.
 
 **[中文说明](README_CN.md)**
+**[Описание на русском](README_RU.md)**
 
 ## Demo
 
