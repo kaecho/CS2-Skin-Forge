@@ -17,7 +17,7 @@ A local-only skin customization plugin for Counter-Strike 2.
 4. Add `-insecure` to CS2 launch options
 5. Customize your loadout and click "Apply Loadout"!
 
-See the [README](https://github.com/emptysuns/CS2-Skin-Forge/blob/main/README.md) for detailed instructions.
+See the [README](https://github.com/kaecho/CS2-Skin-Forge/blob/main/README.md) for detailed instructions.
 
 ---
 
@@ -38,4 +38,4 @@ See the [README](https://github.com/emptysuns/CS2-Skin-Forge/blob/main/README.md
 4. 在 CS2 启动项中加入 `-insecure`
 5. 配置装备后点击「应用装备」即可
 
-详细说明请查看 [中文文档](https://github.com/emptysuns/CS2-Skin-Forge/blob/main/README_CN.md)。
+详细说明请查看 [中文文档](https://github.com/kaecho/CS2-Skin-Forge/blob/main/README_CN.md)。

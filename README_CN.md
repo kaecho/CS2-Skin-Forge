@@ -149,7 +149,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/emptysuns/CS2-Skin-Forge.git
+git clone https://github.com/kaecho/CS2-Skin-Forge.git
 cd CS2-Skin-Forge
 
 # 安装前端依赖

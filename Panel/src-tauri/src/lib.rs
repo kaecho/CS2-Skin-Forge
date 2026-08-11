@@ -255,7 +255,7 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
 #[tauri::command]
 fn check_update() -> Result<UpdateCheckResult, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
-    let api_url = "https://api.github.com/repos/emptysuns/CS2-Skin-Forge/releases/latest";
+    let api_url = "https://api.github.com/repos/kaecho/CS2-Skin-Forge/releases/latest";
     let resp = ureq::get(api_url)
         .set("User-Agent", "CS2-Skin-Forge/update-check")
         .timeout(std::time::Duration::from_secs(10))
@@ -270,7 +270,7 @@ fn check_update() -> Result<UpdateCheckResult, String> {
     let latest_version = tag.trim_start_matches('v').to_string();
     let release_url = json["html_url"]
         .as_str()
-        .unwrap_or("https://github.com/emptysuns/CS2-Skin-Forge/releases/latest")
+        .unwrap_or("https://github.com/kaecho/CS2-Skin-Forge/releases/latest")
         .to_string();
     let release_notes = json["body"].as_str().unwrap_or("").to_string();
     let update_available = is_newer_version(&latest_version, &current_version);

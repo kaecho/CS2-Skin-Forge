@@ -149,7 +149,7 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/emptysuns/CS2-Skin-Forge.git
+git clone https://github.com/kaecho/CS2-Skin-Forge.git
 cd CS2-Skin-Forge
 
 # Установите зависимости фронтенда

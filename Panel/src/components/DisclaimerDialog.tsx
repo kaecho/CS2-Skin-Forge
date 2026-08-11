@@ -56,10 +56,10 @@ export default function DisclaimerDialog({ onAccepted }: DisclaimerDialogProps) 
               : 'This software is completely free and open source. Do not pay for it.'}
           </p>
           <span
-            onClick={() => openUrl("https://github.com/emptysuns/CS2-Skin-Forge")}
+            onClick={() => openUrl("https://github.com/kaecho/CS2-Skin-Forge")}
             className="text-blue-400 hover:text-blue-300 underline text-xs block cursor-pointer"
           >
-            github.com/emptysuns/CS2-Skin-Forge
+            github.com/kaecho/CS2-Skin-Forge
           </span>
         </div>
 

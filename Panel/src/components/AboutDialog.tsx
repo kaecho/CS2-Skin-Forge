@@ -14,8 +14,8 @@ interface AboutDialogProps {
 const PROJECT_LINKS = [
   {
     name: "CS2-Skin-Forge",
-    desc: "github.com/emptysuns/CS2-Skin-Forge",
-    url: "https://github.com/emptysuns/CS2-Skin-Forge",
+    desc: "github.com/kaecho/CS2-Skin-Forge",
+    url: "https://github.com/kaecho/CS2-Skin-Forge",
   },
   {
     name: "cs2-WeaponPaints",

@@ -278,7 +278,7 @@ function App() {
 
       <footer className="text-center text-[10px] text-gray-600 py-1.5 border-t border-white/[0.04]">
         <span
-          onClick={() => openUrl("https://github.com/emptysuns/CS2-Skin-Forge")}
+          onClick={() => openUrl("https://github.com/kaecho/CS2-Skin-Forge")}
           className="hover:text-gray-400 transition-colors cursor-pointer"
         >
           CS2 Skin Mod
