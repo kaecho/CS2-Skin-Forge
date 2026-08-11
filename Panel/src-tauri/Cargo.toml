@@ -1,6 +1,6 @@
 [package]
 name = "cs2-skin-mod-panel"
-version = "1.8.1"
+version = "1.8.2"
 description = "CS2 Skin Local Mod - Visual skin customization panel"
 authors = ["CS2-Skin-local-mod"]
 edition = "2021"
