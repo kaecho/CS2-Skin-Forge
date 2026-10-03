@@ -96,7 +96,8 @@ There is no automated linter configured yet. Code style follows:
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Tauri 2
 - **Backend (Rust)**: Tauri 2 runtime, file I/O with `std::fs`, JSON parsing with `serde_json`
-- **Plugin**: C# (Net8.0), CounterStrikeSharp 1.0.313
+- **Plugin**: C# (Net8.0), CounterStrikeSharp 1.0.365
+  - The plugin targets `net8.0` on purpose: .NET 8 assemblies load on the .NET 10 runtime that CounterStrikeSharp 1.0.370+ ships, while a `net10.0` plugin would refuse to load on the older net8.0 CSS builds many servers still run. 1.0.365 is the newest CSS release that still targets net8.0.
 - **Build**: Cargo (Rust), npm/Node.js 18+, dotnet (C#)
 - **CI/CD**: GitHub Actions
 - **Localization**: 6 languages (English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian)
@@ -148,6 +149,9 @@ The plugin has English-only names in C#, but the panel translates on the fronten
 - **Gloves**: DefIndex/paint mappings in plugin's `StaticData.cs`
 - **Stickers**: `Panel/src/data/stickers.ts` (cosmetic weapon stickers, 4 slots per weapon)
 - **Keychains/Charms**: `Panel/src/data/keychains.ts` (decorative weapon attachments)
+
+Regenerate the sticker and music kit data with `python3 scripts/sync_csgo_api.py`
+(see "Sticker / Music Kit Data Sync" under Common Gotchas).
 
 ## Key Files to Know
 
@@ -255,6 +259,47 @@ The plugin exposes the following console commands (accessible in-game via the co
 - `skin_reset`: Reset all skins to defaults
 
 ## Common Gotchas
+
+### CS2 Updates Move the Attribute Setter (skins silently stop working)
+Every paint, sticker and keychain write goes through
+`CAttributeList::SetOrAddAttributeValueByName`, which `WeaponService` reaches by
+byte signature (`SetAttrSignaturesWindows` / `SetAttrSignaturesLinux`). Valve
+recompiles the server binary on most game updates, which moves that function.
+
+Symptoms when the signature goes stale: knife **models** still swap (the
+`ChangeSubclass` call runs before any attribute write) while gun skins, gloves,
+knife paints, stickers and keychains do nothing, and the server log shows
+`Could not resolve CAttributeList::SetOrAddAttributeValueByName`.
+
+Recovery:
+1. Check `gamedata/weaponpaints.json` in
+   [Nereziel/cs2-WeaponPaints](https://github.com/Nereziel/cs2-WeaponPaints) for
+   the current signature (they track it within days of a game update).
+2. Add the new pattern to the **top** of both signature arrays in
+   `Services/WeaponService.cs`. Keep the previous entry as a fallback so servers
+   that have not updated yet still work.
+3. Bump the version and ship a release. Users must redeploy the addon.
+
+`CreateSetAttributeFunction` validates the resolved handle: a signature that does
+not match yields a zero handle instead of an exception, so an unchecked plugin
+would call a null function pointer on every weapon.
+
+### Sticker / Music Kit Data Sync
+`python3 scripts/sync_csgo_api.py` regenerates `Panel/src/data/stickers.ts`,
+the `musicKits` block in `Panel/src/data/skins.ts`, `musicKitNameMap` in
+`Panel/src/data/localNames.ts`, and `KitIds` in the plugin's `StaticData.cs`
+from the ByMykel CSGO-API. Weapon, knife and glove paint kits are not part of
+that script: they mirror the plugin's `GunPaints` pool and are edited by hand
+when Valve ships a collection.
+
+### CS2 Path Detection
+`detect_cs2_path` returns `{ path, searched }` rather than a bare optional, so
+the settings dialog can list what it looked at when detection fails. It probes
+every Windows drive letter for well-known Steam layouts, every drive-level
+folder containing `steamapps`, and each library in `libraryfolders.vdf`.
+`deploy_addons` refuses paths that are not a CS2 install (`validate_cs2_path`)
+and the panel saves the configured path before deploying, so a freshly typed
+path works without pressing Save first.
 
 ### Music Kit IDs Are Real IDs, Not Indexes
 

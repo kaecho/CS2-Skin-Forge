@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- net8.0 keeps the plugin loadable on every CounterStrikeSharp host in
+         the wild: .NET 8 assemblies run fine on the .NET 10 runtime that
+         CSS >= 1.0.370 ships, while a net10.0 plugin would refuse to load on
+         the older (net8.0) CSS builds many servers still run. -->
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>PlayerSkinMod</AssemblyName>
     <Nullable>enable</Nullable>
@@ -8,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.313" />
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.365" />
   </ItemGroup>
 
 </Project>

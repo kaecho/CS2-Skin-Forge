@@ -1,6 +1,5 @@
 using System.Drawing;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
@@ -19,7 +18,7 @@ namespace PlayerSkinMod;
 public class PlayerSkinModPlugin : BasePlugin
 {
     public override string ModuleName        => "PlayerSkinMod";
-    public override string ModuleVersion     => "1.8.1";
+    public override string ModuleVersion     => "1.8.3";
     public override string ModuleAuthor      => "CS2-Skin-local-mod";
     public override string ModuleDescription => "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally";
 
@@ -73,18 +72,17 @@ public class PlayerSkinModPlugin : BasePlugin
             Logger.LogWarning($"[PlayerSkinMod] Could not set up file watcher: {ex.Message}");
         }
 
-        try
+        // Attribute setter: every paint/sticker/keychain write goes through it.
+        // If it cannot be resolved the plugin must not invoke it (the handle
+        // would be null and the call would throw on every weapon), so the
+        // factory returns null and the skin paths stay disabled.
+        _setAttrByName = WeaponService.CreateSetAttributeFunction(Logger);
+        if (_setAttrByName == null)
         {
-            _setAttrByName = new MemoryFunctionVoid<nint, string, float>(
-                RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                    ? "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85"
-                    : "40 53 55 41 56 48 81 EC 90 00 00 00");
-            Logger.LogInformation($"[PlayerSkinMod] SetOrAddAttributeValueByName loaded: {_setAttrByName != null}");
-        }
-        catch (Exception ex)
-        {
-            _setAttrByName = null;
-            Logger.LogError($"[PlayerSkinMod] SetOrAddAttributeValueByName signature failed: {ex.Message} (skins/gloves disabled)");
+            Logger.LogError(
+                "[PlayerSkinMod] Could not resolve CAttributeList::SetOrAddAttributeValueByName in the server binary. " +
+                "Weapon skins, gloves, stickers, keychains and knife paints are DISABLED. " +
+                "The game binary changed since this build. Update PlayerSkinMod.");
         }
 
         RegisterListener<Listeners.OnMapStart>(_ =>
@@ -159,7 +157,7 @@ public class PlayerSkinModPlugin : BasePlugin
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 Loaded loadouts: {_playerLoadouts.Count}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 KnifeCT: {loadout.KnifeIndexCt}, KnifeT: {loadout.KnifeIndexT}, GloveCT: {loadout.GloveIndexCt}, GloveT: {loadout.GloveIndexT}, AgentCT: {loadout.AgentModelCt}, AgentT: {loadout.AgentModelT}, Music: {loadout.MusicKit}");
         player.PrintToChat($" \x04[PlayerSkinMod]\x01 UseRandom: {loadout.UseRandom}, Weapons: {loadout.WeaponPaints.Count}, Keychains: {loadout.WeaponKeychains.Count}");
-        player.PrintToChat($" \x04[PlayerSkinMod]\x01 SetAttrByName: {_setAttrByName != null}");
+        player.PrintToChat($" \x04[PlayerSkinMod]\x01 Attribute setter: {(_setAttrByName == null ? "NOT RESOLVED - skins disabled" : "ok")}");
         player.PrintToChat(" \x04[PlayerSkinMod]\x01 --- End Diagnostic ---");
         player.PrintToChat(" \x04[PlayerSkinMod]\x10 Respawn to apply skins.");
     }
@@ -444,7 +442,7 @@ public class PlayerSkinModPlugin : BasePlugin
 
         if (_setAttrByName == null) return;
 
-        WeaponService.ReplaceKnife(player, pawn, knifeDefIndex, knifePaintKit, _legacyPaints, _setAttrByName, knifeSeed, knifeWear);
+        WeaponService.ReplaceKnife(player, pawn, knifeDefIndex, knifePaintKit, _legacyPaints, _setAttrByName, knifeSeed, knifeWear, Logger);
         if (applyGloves)
             WeaponService.ApplyGloves(player, pawn, gloveDefIndex, glovePaintKit, _setAttrByName, gloveSeed, gloveWear, (delay, cb) => AddTimer(delay, cb));
     }

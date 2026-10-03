@@ -16,6 +16,7 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
   const [saving, setSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [pathNotice, setPathNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [pluginStatus, setPluginStatus] = useState<PluginCheckResult | null>(null);
 
   const refreshStatus = async () => {
@@ -31,19 +32,29 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
     if (isOpen) {
       api.getConfig().then(setConfig).catch(console.error);
       setDeployResult(null);
+      setPathNotice(null);
       refreshStatus();
     }
   }, [isOpen]);
 
   const handleDetect = async () => {
     setDetecting(true);
+    setPathNotice(null);
     try {
-      const path = await api.detectCs2Path();
-      if (path) {
-        setConfig(prev => ({ ...prev, cs2Path: path }));
+      const result = await api.detectCs2Path();
+      if (result.path) {
+        setConfig(prev => ({ ...prev, cs2Path: result.path }));
+        setPathNotice({ kind: "success", text: t("settings.detectSuccess", { path: result.path }) });
+      } else {
+        setPathNotice({
+          kind: "error",
+          text: result.searched.length > 0
+            ? t("settings.detectNotFound", { paths: result.searched.join("\n") })
+            : t("settings.detectNoSteam"),
+        });
       }
     } catch (e) {
-      console.error("Failed to detect CS2 path:", e);
+      setPathNotice({ kind: "error", text: t("settings.detectFailed", { error: String(e) }) });
     }
     setDetecting(false);
   };
@@ -65,6 +76,12 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
     setDeploying(true);
     setDeployResult(null);
     try {
+      // Deploy reads the config from disk, so persist the current path first.
+      // Otherwise a freshly detected or typed path is ignored on first run.
+      const newConfig = { ...config, language: lang };
+      await api.saveConfig(newConfig);
+      onConfigSaved(newConfig);
+
       const deployMsg = await api.deployAddons();
       // Post-deploy verification: check files are actually present
       let verifyMsg = "";
@@ -152,7 +169,7 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
             <input
               type="text"
               value={config.cs2Path ?? ""}
-              onChange={(e) => setConfig(prev => ({ ...prev, cs2Path: e.target.value || null }))}
+              onChange={(e) => { setPathNotice(null); setConfig(prev => ({ ...prev, cs2Path: e.target.value || null })); }}
               placeholder="/path/to/game/csgo"
               className="input-field flex-1"
             />
@@ -164,6 +181,11 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
               {detecting ? "..." : t("settings.detect")}
             </button>
           </div>
+          {pathNotice && (
+            <div className={`text-xs whitespace-pre-wrap ${pathNotice.kind === "success" ? "text-green-400" : "text-red-400"}`}>
+              {pathNotice.text}
+            </div>
+          )}
         </div>
 
         {/* Deploy Addons */}
@@ -207,13 +229,15 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
               </span>
               <span className="text-gray-300">PlayerSkinMod</span>
               <span className="text-gray-500">
-                {pluginStatus.allPresent
-                  ? `(v${pluginStatus.deployedVersion || "?"})`
-                  : pluginStatus.missingFiles.length > 0
-                    ? `(${t("settings.missingFiles", { files: pluginStatus.missingFiles.join(", ") })})`
-                    : pluginStatus.versionMismatch
-                      ? `(${t("settings.versionMismatchShort")})`
-                      : `(${t("common.unknown")})`}
+                {!pluginStatus.pathConfigured
+                  ? `(${t("status.pathNotConfigured")})`
+                  : pluginStatus.allPresent
+                    ? `(v${pluginStatus.deployedVersion || "?"})`
+                    : pluginStatus.missingFiles.length > 0
+                      ? `(${t("settings.missingFiles", { files: pluginStatus.missingFiles.join(", ") })})`
+                      : pluginStatus.versionMismatch
+                        ? `(${t("settings.versionMismatchShort")})`
+                        : `(${t("common.unknown")})`}
               </span>
             </div>
           </div>

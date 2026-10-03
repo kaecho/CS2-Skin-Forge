@@ -90,6 +90,10 @@ export const EN = {
   "settings.cs2PathHint": "Path to game/csgo directory",
   "settings.browse": "Browse...",
   "settings.detect": "Auto Detect",
+  "settings.detectSuccess": "CS2 found: {path}",
+  "settings.detectNotFound": "CS2 was not found automatically. Locations checked:\n{paths}\nEnter the path to your game/csgo folder manually.",
+  "settings.detectNoSteam": "No Steam library was found on this machine. Enter the path to your game/csgo folder manually.",
+  "settings.detectFailed": "Automatic detection failed: {error}",
   "settings.deployAddons": "Deploy Addons",
   "settings.deployAddonsHint": "Copy plugin files to CS2 directory",
 
@@ -101,6 +105,7 @@ export const EN = {
   "status.reloaded": "Loadout reloaded! Respawn to apply.",
   "status.deployed": "Addons deployed successfully!",
   "status.deployError": "Failed to deploy addons",
+  "status.pathNotConfigured": "CS2 path not set",
   "status.deployPartial": "{n} files deployed, {m} skipped",
   "status.deployVerifyFailed": "Deploy verification failed: some files are missing or empty",
   "status.pluginMissing": "Plugin files missing! Please deploy addons in Settings.",

@@ -15,6 +15,12 @@ export interface PluginCheckResult {
   deployedVersion: string | null;
   panelVersion: string;
   counterstrikesharpInstalled: boolean;
+  pathConfigured: boolean;
+}
+
+export interface DetectResult {
+  path: string | null;
+  searched: string[];
 }
 
 export interface UpdateCheckResult {
@@ -32,7 +38,7 @@ export const api = {
     invoke<void>("save_loadout", { slot, loadout }),
   loadLoadout: (slot: number) =>
     invoke<Loadout | null>("load_loadout", { slot }),
-  detectCs2Path: () => invoke<string | null>("detect_cs2_path"),
+  detectCs2Path: () => invoke<DetectResult>("detect_cs2_path"),
   checkPluginFiles: () => invoke<PluginCheckResult>("check_plugin_files"),
   deployAddons: () => invoke<string>("deploy_addons"),
   checkUpdate: () => invoke<UpdateCheckResult>("check_update"),

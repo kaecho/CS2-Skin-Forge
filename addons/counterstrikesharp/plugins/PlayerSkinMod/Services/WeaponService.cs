@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using Microsoft.Extensions.Logging;
 using PlayerSkinMod.Data;
 using PlayerSkinMod.Models;
+using System.Runtime.InteropServices;
 
 namespace PlayerSkinMod.Services;
 
@@ -11,6 +12,72 @@ public static class WeaponService
 {
     private static ulong _nextItemId = 0xF00DCAFE;
     private static bool _skinErrorLogged;
+    private static bool _knifeErrorLogged;
+
+    /// <summary>
+    /// Byte signatures for CAttributeList::SetOrAddAttributeValueByName, the
+    /// function every paint/sticker/keychain attribute write goes through.
+    /// Valve recompiles the server binary on most game updates, which moves
+    /// this function and invalidates the signature. That is what silently
+    /// disables gun skins, gloves and knife paints while knife *models*
+    /// (ChangeSubclass) keep working.
+    ///
+    /// Order matters: newest signature first, then the previous build's, so a
+    /// server that has not been updated yet keeps working.
+    /// </summary>
+    private static readonly string[] SetAttrSignaturesWindows =
+    {
+        // CS2 builds since the September 2026 update (CounterStrikeSharp 1.0.37x)
+        "48 89 4C 24 ? 53 41 55 41 56",
+        // CS2 builds before that update
+        "40 53 55 41 56 48 81 EC 90 00 00 00",
+    };
+
+    private static readonly string[] SetAttrSignaturesLinux =
+    {
+        // CS2 builds since the September 2026 update (CounterStrikeSharp 1.0.37x)
+        "55 48 89 E5 41 57 41 56 41 55 49 89 FD 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85",
+        // CS2 builds before that update
+        "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85",
+    };
+
+    /// <summary>
+    /// Resolve the attribute setter for the running server binary. Returns
+    /// null when no candidate signature matches, so callers can disable skin
+    /// application instead of invoking a null function pointer.
+    ///
+    /// CounterStrikeSharp swallows the "signature not found" error inside the
+    /// MemoryFunction constructor and hands back a zero handle, so the handle
+    /// has to be checked explicitly.
+    /// </summary>
+    public static MemoryFunctionVoid<nint, string, float>? CreateSetAttributeFunction(ILogger? logger)
+    {
+        var candidates = RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+            ? SetAttrSignaturesLinux
+            : SetAttrSignaturesWindows;
+
+        foreach (var signature in candidates)
+        {
+            try
+            {
+                var function = new MemoryFunctionVoid<nint, string, float>(signature);
+                if (function.Handle == IntPtr.Zero)
+                {
+                    logger?.LogWarning($"[PlayerSkinMod] Signature not present in the server binary: {signature}");
+                    continue;
+                }
+
+                logger?.LogInformation($"[PlayerSkinMod] SetOrAddAttributeValueByName resolved ({signature})");
+                return function;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning($"[PlayerSkinMod] Signature rejected ({signature}): {ex.Message}");
+            }
+        }
+
+        return null;
+    }
 
     public static CCSPlayerController? GetPlayerFromItemServices(CCSPlayer_ItemServices itemServices)
     {
@@ -137,6 +204,12 @@ public static class WeaponService
                 setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
                 setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", UIntToFloat(0));
             }
+            else
+            {
+                // Clear a StatTrak quality left over from a previous loadout,
+                // otherwise the client keeps the orange StatTrak counter.
+                item.EntityQuality = 0;
+            }
 
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
 
@@ -170,7 +243,8 @@ public static class WeaponService
         HashSet<(ushort DefIndex, int Paint)> legacyPaints,
         MemoryFunctionVoid<nint, string, float> setAttrByName,
         int knifeSeed = 0,
-        float knifeWear = 0.01f)
+        float knifeWear = 0.01f,
+        ILogger? logger = null)
     {
         try
         {
@@ -234,9 +308,16 @@ public static class WeaponService
                 break;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Knife replacement failed silently — common with invalid defindex or timing issues
+            // ChangeSubclass runs before the paint attributes, so a failure here
+            // still leaves the knife model swapped and only the paint missing,
+            // which is easy to miss in game. Log it instead of failing silently.
+            if (!_knifeErrorLogged)
+            {
+                _knifeErrorLogged = true;
+                logger?.LogError($"[PlayerSkinMod] ReplaceKnife failed: {ex.Message}");
+            }
         }
     }
 

@@ -25,6 +25,9 @@ pub struct PluginCheckResult {
     pub deployed_version: Option<String>,
     pub panel_version: String,
     pub counterstrikesharp_installed: bool,
+    /// False until a CS2 path is saved, which the settings panel reports
+    /// instead of showing three missing files for an unconfigured install.
+    pub path_configured: bool,
 }
 
 /// Read the CS2 path from config and return the PlayerSkinMod plugin directory.
@@ -131,8 +134,9 @@ fn deploy_counterstrikesharp(cs2_path: &Path) -> Result<String, String> {
     let api_url = "https://api.github.com/repos/roflmuffin/CounterStrikeSharp/releases/latest";
     let resp = ureq::get(api_url)
         .set("User-Agent", "CS2-Skin-Forge/auto-deploy")
+        .timeout(std::time::Duration::from_secs(20))
         .call()
-        .map_err(|e| format!("Failed to query GitHub API: {}", e))?;
+        .map_err(|e| format!("Failed to query GitHub API (check your internet connection): {}", e))?;
     let json: serde_json::Value = resp
         .into_json()
         .map_err(|e| format!("Failed to parse API response: {}", e))?;
@@ -149,8 +153,9 @@ fn deploy_counterstrikesharp(cs2_path: &Path) -> Result<String, String> {
     // 3. Download the zip into memory.
     let resp = ureq::get(&dl_url)
         .set("User-Agent", "CS2-Skin-Forge/auto-deploy")
+        .timeout(std::time::Duration::from_secs(600))
         .call()
-        .map_err(|e| format!("Failed to download CounterStrikeSharp: {}", e))?;
+        .map_err(|e| format!("Failed to download CounterStrikeSharp from {dl_url}: {e}"))?;
     let mut zip_bytes: Vec<u8> = Vec::new();
     resp.into_reader()
         .read_to_end(&mut zip_bytes)
@@ -351,14 +356,31 @@ fn load_loadout(slot: u32) -> Result<Option<serde_json::Value>, String> {
     Ok(loadouts.get(&slot.to_string()).cloned())
 }
 
-/// Default Steam installation roots per platform.
+/// Every Windows drive letter, used to probe well-known Steam layouts without
+/// touching the registry (a stat on a missing path is cheap and safe).
+fn windows_drives() -> Vec<String> {
+    if !cfg!(target_os = "windows") {
+        return Vec::new();
+    }
+    ('C'..='Z').map(|c| format!("{c}:\\")).collect()
+}
+
+/// Default Steam installation roots per platform, plus well-known Windows
+/// layouts on every drive.
 fn steam_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if cfg!(target_os = "windows") {
-        for drive in ["C", "D", "E", "F"] {
-            roots.push(PathBuf::from(format!("{drive}:\\Program Files (x86)\\Steam")));
-            roots.push(PathBuf::from(format!("{drive}:\\Steam")));
-            roots.push(PathBuf::from(format!("{drive}:\\SteamLibrary")));
+        for drive in windows_drives() {
+            for hint in [
+                "Steam",
+                "SteamLibrary",
+                "Games\\Steam",
+                "Games\\SteamLibrary",
+                "Program Files (x86)\\Steam",
+                "Program Files\\Steam",
+            ] {
+                roots.push(PathBuf::from(format!("{drive}{hint}")));
+            }
         }
     } else if cfg!(target_os = "macos") {
         if let Some(home) = dirs::home_dir() {
@@ -373,6 +395,42 @@ fn steam_roots() -> Vec<PathBuf> {
         }
     }
     roots
+}
+
+/// Add `candidate` to `libraries` when it actually holds a `steamapps` folder.
+fn push_library(libraries: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if candidate.join("steamapps").is_dir() && !libraries.iter().any(|l| *l == candidate) {
+        libraries.push(candidate);
+    }
+}
+
+/// Steam library folders to inspect: the default roots, any drive-level folder
+/// containing `steamapps` (catches custom installs like `D:\Games\SteamLibrary`
+/// without scanning whole disks), and every library registered in those
+/// folders' `libraryfolders.vdf`.
+fn steam_libraries() -> Vec<PathBuf> {
+    let mut roots = steam_roots();
+
+    // One level below each drive root, which is where custom libraries live.
+    for drive in windows_drives() {
+        if let Ok(entries) = fs::read_dir(&drive) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    roots.push(path);
+                }
+            }
+        }
+    }
+
+    let mut libraries: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        push_library(&mut libraries, root.clone());
+        for lib in parse_library_folders(&root.join("config").join("libraryfolders.vdf")) {
+            push_library(&mut libraries, lib);
+        }
+    }
+    libraries
 }
 
 /// Extract additional library paths from Steam's libraryfolders.vdf
@@ -394,31 +452,52 @@ fn parse_library_folders(vdf_path: &Path) -> Vec<PathBuf> {
     libs
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectResult {
+    pub path: Option<String>,
+    /// Every location that was checked, so a failed detection can explain
+    /// itself instead of leaving the user with a button that does nothing.
+    pub searched: Vec<String>,
+}
+
+/// The `game/csgo` directory inside a Steam library, whether or not it exists.
+fn cs2_dir_in(library: &Path) -> PathBuf {
+    library
+        .join("steamapps")
+        .join("common")
+        .join("Counter-Strike Global Offensive")
+        .join("game")
+        .join("csgo")
+}
+
+/// First library that actually holds a CS2 install, plus every location that
+/// was checked so a failed detection can explain itself.
+fn find_cs2(libraries: &[PathBuf]) -> (Option<PathBuf>, Vec<String>) {
+    let mut searched: Vec<String> = Vec::new();
+
+    for library in libraries {
+        let cs2 = cs2_dir_in(library);
+        let display = cs2.to_string_lossy().to_string();
+        searched.push(display);
+        if cs2.is_dir() {
+            return (Some(cs2), searched);
+        }
+    }
+
+    (None, searched)
+}
+
 #[tauri::command]
-fn detect_cs2_path() -> Result<Option<String>, String> {
-    // Collect candidate Steam libraries: the default roots plus every extra
-    // library registered in each root's libraryfolders.vdf.
-    let mut libraries: Vec<PathBuf> = Vec::new();
-    for root in steam_roots() {
-        for lib in parse_library_folders(&root.join("config").join("libraryfolders.vdf")) {
-            libraries.push(lib);
-        }
-        libraries.push(root);
-    }
+fn detect_cs2_path() -> Result<DetectResult, String> {
+    let (path, mut searched) = find_cs2(&steam_libraries());
 
-    for lib in libraries {
-        let cs2 = lib
-            .join("steamapps")
-            .join("common")
-            .join("Counter-Strike Global Offensive")
-            .join("game")
-            .join("csgo");
-        if cs2.exists() {
-            return Ok(Some(cs2.to_string_lossy().to_string()));
-        }
-    }
-
-    Ok(None)
+    // Keep the report readable when a machine has many Steam libraries.
+    searched.truncate(20);
+    Ok(DetectResult {
+        path: path.map(|p| p.to_string_lossy().to_string()),
+        searched,
+    })
 }
 
 #[tauri::command]
@@ -434,6 +513,7 @@ fn check_plugin_files() -> Result<PluginCheckResult, String> {
                 deployed_version: None,
                 panel_version,
                 counterstrikesharp_installed: false,
+                path_configured: false,
             });
         }
     };
@@ -477,13 +557,41 @@ fn check_plugin_files() -> Result<PluginCheckResult, String> {
         deployed_version,
         panel_version,
         counterstrikesharp_installed: css_installed,
+        path_configured: true,
     })
+}
+
+/// Reject paths that clearly are not a CS2 `game/csgo` directory. Without this
+/// a typo silently creates an empty addons tree somewhere unrelated.
+fn validate_cs2_path(cs2_path: &Path) -> Result<(), String> {
+    if !cs2_path.is_dir() {
+        return Err(format!(
+            "CS2 path does not exist: {}. Pick the game/csgo folder of your CS2 install.",
+            cs2_path.display()
+        ));
+    }
+
+    let markers = [
+        "gameinfo.gi",
+        "addons",
+        "csgo.exe",
+        "csgo_linux64",
+        "pak01_dir.vpk",
+    ];
+    if !markers.iter().any(|marker| cs2_path.join(marker).exists()) {
+        return Err(format!(
+            "{} does not look like a CS2 install (none of {} found).",
+            cs2_path.display(),
+            markers.join(", ")
+        ));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 fn deploy_addons(app: tauri::AppHandle) -> Result<String, String> {
     let target_dir = get_plugin_dir_from_config()?;
-    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
 
     // Determine CS2 game directory (go up from .../plugins/PlayerSkinMod to game dir)
     let cs2_path = target_dir
@@ -492,6 +600,10 @@ fn deploy_addons(app: tauri::AppHandle) -> Result<String, String> {
         .and_then(|p| p.parent())
         .and_then(|p| p.parent())
         .ok_or_else(|| "Cannot determine CS2 game directory".to_string())?;
+
+    validate_cs2_path(cs2_path)?;
+
+    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
 
     // Auto-deploy CounterStrikeSharp if missing
     let mut css_result = String::new();
@@ -624,6 +736,121 @@ fn deploy_addons(app: tauri::AppHandle) -> Result<String, String> {
     result.push_str(&format!(" | Version: {}", version));
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unique scratch directory per test; no external tempfile dependency.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("cs2skinmod-test-{name}"));
+            fs::remove_dir_all(&dir).ok();
+            fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).ok();
+        }
+    }
+
+    fn write_file(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"x").unwrap();
+    }
+
+    fn make_cs2_install(library: &Path) {
+        fs::create_dir_all(cs2_dir_in(library)).unwrap();
+    }
+
+    #[test]
+    fn parses_library_folders_entries() {
+        let scratch = Scratch::new("vdf");
+        let vdf = scratch.path().join("libraryfolders.vdf");
+        fs::write(
+            &vdf,
+            "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"C:\\\\Program Files (x86)\\\\Steam\"\n\t}\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"D:\\\\Games\\\\SteamLibrary\"\n\t}\n}\n",
+        )
+        .unwrap();
+
+        let libraries = parse_library_folders(&vdf);
+        assert_eq!(
+            libraries,
+            vec![
+                PathBuf::from("C:\\Program Files (x86)\\Steam"),
+                PathBuf::from("D:\\Games\\SteamLibrary"),
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_vdf_yields_no_libraries() {
+        let scratch = Scratch::new("vdf-missing");
+        assert!(parse_library_folders(&scratch.path().join("nope.vdf")).is_empty());
+    }
+
+    #[test]
+    fn finds_the_library_that_holds_cs2() {
+        let scratch = Scratch::new("find");
+        let empty = scratch.path().join("empty-library");
+        let game = scratch.path().join("games");
+        fs::create_dir_all(&empty).unwrap();
+        make_cs2_install(&game);
+
+        let (found, searched) = find_cs2(&[empty.clone(), game.clone()]);
+        assert_eq!(found, Some(cs2_dir_in(&game)));
+        assert_eq!(searched.len(), 2, "both libraries should be reported");
+    }
+
+    #[test]
+    fn reports_every_location_when_cs2_is_missing() {
+        let scratch = Scratch::new("missing");
+        let a = scratch.path().join("a");
+        let b = scratch.path().join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+
+        let (found, searched) = find_cs2(&[a.clone(), b.clone()]);
+        assert!(found.is_none());
+        assert_eq!(
+            searched,
+            vec![
+                cs2_dir_in(&a).to_string_lossy().to_string(),
+                cs2_dir_in(&b).to_string_lossy().to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_a_directory_that_is_not_cs2() {
+        let scratch = Scratch::new("reject");
+        let err = validate_cs2_path(scratch.path()).unwrap_err();
+        assert!(err.contains("does not look like a CS2 install"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_path_that_does_not_exist() {
+        let scratch = Scratch::new("reject-missing");
+        let err = validate_cs2_path(&scratch.path().join("nope")).unwrap_err();
+        assert!(err.contains("does not exist"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_directory_with_cs2_markers() {
+        let scratch = Scratch::new("accept");
+        write_file(&scratch.path().join("gameinfo.gi"));
+        assert!(validate_cs2_path(scratch.path()).is_ok());
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
