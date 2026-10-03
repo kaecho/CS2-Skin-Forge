@@ -1,23 +1,30 @@
 import { useState, useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useT } from "../i18n";
-import { api, type AppConfig, type PluginCheckResult } from "../lib/api";
+import { api, type AppConfig, type DetectResult, type PluginCheckResult } from "../lib/api";
 import Modal from "./ui/Modal";
 
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigSaved: (config: AppConfig) => void;
+  /** Called after the saved loadouts are wiped so the panel can reset its state. */
+  onLoadoutCleared?: () => void;
 }
 
-export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: SettingsPanelProps) {
+export default function SettingsPanel({ isOpen, onClose, onConfigSaved, onLoadoutCleared }: SettingsPanelProps) {
   const { t, lang, changeLanguage, languages } = useT();
   const [config, setConfig] = useState<AppConfig>({ language: lang, cs2Path: null });
   const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [directory, setDirectory] = useState<DetectResult | null>(null);
   const [pathNotice, setPathNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [pluginStatus, setPluginStatus] = useState<PluginCheckResult | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetNotice, setResetNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   const refreshStatus = async () => {
     try {
@@ -33,30 +40,68 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
       api.getConfig().then(setConfig).catch(console.error);
       setDeployResult(null);
       setPathNotice(null);
+      setResetNotice(null);
+      setConfirmingReset(false);
       refreshStatus();
+      // Populate the installation list so a fresh machine sees its candidates
+      // without having to press a button first.
+      api.detectCs2Path().then(setDirectory).catch(() => setDirectory(null));
     }
   }, [isOpen]);
+
+  const applyDirectory = (info: DetectResult) => {
+    setDirectory(info);
+    if (info.selected) {
+      setConfig(prev => ({ ...prev, cs2Path: info.selected }));
+    }
+  };
 
   const handleDetect = async () => {
     setDetecting(true);
     setPathNotice(null);
     try {
-      const result = await api.detectCs2Path();
-      if (result.path) {
-        setConfig(prev => ({ ...prev, cs2Path: result.path }));
-        setPathNotice({ kind: "success", text: t("settings.detectSuccess", { path: result.path }) });
-      } else {
+      const info = await api.detectCs2Path();
+      applyDirectory(info);
+      if (info.selected) {
+        setPathNotice({ kind: "success", text: t("settings.detectSuccess", { path: info.selected }) });
+      } else if (info.candidates.length === 0) {
         setPathNotice({
           kind: "error",
-          text: result.searched.length > 0
-            ? t("settings.detectNotFound", { paths: result.searched.join("\n") })
-            : t("settings.detectNoSteam"),
+          text: !info.steamFound
+            ? t("settings.detectNoSteam")
+            : info.searched.length > 0
+              ? t("settings.detectNotFound", { paths: info.searched.join("\n") })
+              : t("settings.detectNoCsgo"),
         });
+      } else {
+        setPathNotice({ kind: "error", text: t("settings.detectNeedsChoice") });
       }
     } catch (e) {
       setPathNotice({ kind: "error", text: t("settings.detectFailed", { error: String(e) }) });
     }
     setDetecting(false);
+  };
+
+  const choosePath = async (path: string) => {
+    setPathNotice(null);
+    try {
+      const info = await api.selectCs2Path(path);
+      applyDirectory(info);
+      setPathNotice({ kind: "success", text: t("settings.detectSuccess", { path }) });
+    } catch (e) {
+      setPathNotice({ kind: "error", text: String(e) });
+    }
+  };
+
+  const handleBrowse = async () => {
+    try {
+      const picked = await open({ directory: true, title: t("settings.browseTitle") });
+      if (typeof picked === "string") {
+        await choosePath(picked);
+      }
+    } catch (e) {
+      setPathNotice({ kind: "error", text: String(e) });
+    }
   };
 
   const handleSave = async () => {
@@ -113,7 +158,27 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
     setDeploying(false);
   };
 
+  const handleResetData = async () => {
+    setResetting(true);
+    setResetNotice(null);
+    try {
+      const cleared = await api.resetLoadouts();
+      setConfirmingReset(false);
+      onLoadoutCleared?.();
+      setResetNotice({
+        kind: "success",
+        text: cleared > 0 ? t("status.resetDone", { n: cleared }) : t("status.resetEmpty"),
+      });
+      refreshStatus();
+    } catch (e) {
+      setResetNotice({ kind: "error", text: String(e) });
+    }
+    setResetting(false);
+  };
+
   if (!isOpen) return null;
+
+  const candidates = directory?.candidates ?? [];
 
   return (
     <Modal
@@ -180,7 +245,34 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
             >
               {detecting ? "..." : t("settings.detect")}
             </button>
+            <button onClick={handleBrowse} className="btn-secondary text-sm px-3">
+              {t("settings.browse")}
+            </button>
           </div>
+
+          {candidates.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-gray-500">{t("settings.detectedInstalls")}</p>
+              {candidates.map((path) => {
+                const isSelected = path === directory?.selected;
+                return (
+                  <button
+                    key={path}
+                    onClick={() => choosePath(path)}
+                    className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg border transition-colors truncate ${
+                      isSelected
+                        ? "border-emerald-500/40 bg-emerald-500/[0.08] text-emerald-200"
+                        : "border-white/[0.08] bg-white/[0.04] text-gray-300 hover:bg-white/[0.08]"
+                    }`}
+                    title={path}
+                  >
+                    {isSelected ? "✓ " : ""}{path}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {pathNotice && (
             <div className={`text-xs whitespace-pre-wrap ${pathNotice.kind === "success" ? "text-green-400" : "text-red-400"}`}>
               {pathNotice.text}
@@ -206,6 +298,40 @@ export default function SettingsPanel({ isOpen, onClose, onConfigSaved }: Settin
               {deployResult.success ? t("status.deployed") : t("status.deployError")}
               <br />
               <span className="opacity-70">{deployResult.message}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Clear all loadout data */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-300">
+            {t("settings.clearData")}
+          </label>
+          <p className="text-xs text-gray-500">{t("settings.clearDataHint")}</p>
+          {confirmingReset ? (
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmingReset(false)} className="btn-secondary flex-1 text-sm">
+                {t("btn.cancel")}
+              </button>
+              <button
+                onClick={handleResetData}
+                disabled={resetting}
+                className="btn-primary flex-1 text-sm !bg-red-500/80 hover:!bg-red-500"
+              >
+                {resetting ? t("common.loading") : t("settings.clearDataConfirm")}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setConfirmingReset(true); setResetNotice(null); }}
+              className="btn-secondary w-full text-sm"
+            >
+              {t("settings.clearData")}
+            </button>
+          )}
+          {resetNotice && (
+            <div className={`text-xs whitespace-pre-wrap ${resetNotice.kind === "success" ? "text-green-400" : "text-red-400"}`}>
+              {resetNotice.text}
             </div>
           )}
         </div>

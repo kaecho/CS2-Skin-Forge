@@ -91,53 +91,72 @@ public static class WeaponService
 
     public static float UIntToFloat(uint value) => BitConverter.Int32BitsToSingle((int)value);
 
-    public static void ApplyStickers(
-        CBasePlayerWeapon weapon,
+    /// <summary>
+    /// The attribute lists the client reads an econ item from. Every write has
+    /// to land in both: a charm or sticker that exists in only one of them
+    /// makes the client fall back to the stock finish for the whole item.
+    /// </summary>
+    private static nint[] AttributeListHandles(CEconItemView item) =>
+        new[] { item.NetworkedDynamicAttributes.Handle, item.AttributeList.Handle };
+
+    private static void ApplyStickers(
+        CEconItemView item,
         List<StickerInfo> stickers,
         MemoryFunctionVoid<nint, string, float> setAttrByName)
     {
         if (stickers.Count == 0) return;
-        var item = weapon.AttributeManager?.Item;
-        if (item == null) return;
 
         for (int i = 0; i < Math.Min(stickers.Count, 5); i++)
         {
             var sticker = stickers[i];
             if (sticker.Id == 0) continue;
-            var handle = item.NetworkedDynamicAttributes.Handle;
-            setAttrByName.Invoke(handle, $"sticker slot {i} id", UIntToFloat(sticker.Id));
-            if (sticker.OffsetX != 0 || sticker.OffsetY != 0)
-                setAttrByName.Invoke(handle, $"sticker slot {i} schema", 0f);
-            setAttrByName.Invoke(handle, $"sticker slot {i} offset x", sticker.OffsetX);
-            setAttrByName.Invoke(handle, $"sticker slot {i} offset y", sticker.OffsetY);
-            setAttrByName.Invoke(handle, $"sticker slot {i} wear", sticker.Wear);
-            setAttrByName.Invoke(handle, $"sticker slot {i} scale", sticker.Scale);
-            setAttrByName.Invoke(handle, $"sticker slot {i} rotation", sticker.Rotation);
+
+            foreach (var handle in AttributeListHandles(item))
+            {
+                setAttrByName.Invoke(handle, $"sticker slot {i} id", UIntToFloat(sticker.Id));
+                if (sticker.OffsetX != 0 || sticker.OffsetY != 0)
+                    setAttrByName.Invoke(handle, $"sticker slot {i} schema", 0f);
+                setAttrByName.Invoke(handle, $"sticker slot {i} offset x", sticker.OffsetX);
+                setAttrByName.Invoke(handle, $"sticker slot {i} offset y", sticker.OffsetY);
+                setAttrByName.Invoke(handle, $"sticker slot {i} wear", sticker.Wear);
+                setAttrByName.Invoke(handle, $"sticker slot {i} scale", sticker.Scale);
+                setAttrByName.Invoke(handle, $"sticker slot {i} rotation", sticker.Rotation);
+            }
         }
     }
 
-    public static void ApplyKeychains(
-        CBasePlayerWeapon weapon,
+    private static void ApplyKeychain(
+        CEconItemView item,
         KeychainInfo keychain,
         MemoryFunctionVoid<nint, string, float> setAttrByName)
     {
         if (keychain.Id == 0) return;
-        var item = weapon.AttributeManager?.Item;
-        if (item == null) return;
 
-        var handle = item.NetworkedDynamicAttributes.Handle;
-        setAttrByName.Invoke(handle, "keychain slot 0 id", UIntToFloat(keychain.Id));
-        setAttrByName.Invoke(handle, "keychain slot 0 offset x", keychain.OffsetX);
-        setAttrByName.Invoke(handle, "keychain slot 0 offset y", keychain.OffsetY);
-        setAttrByName.Invoke(handle, "keychain slot 0 offset z", keychain.OffsetZ);
-        if (keychain.Seed > 0)
-            setAttrByName.Invoke(handle, "keychain slot 0 seed", (float)keychain.Seed);
+        foreach (var handle in AttributeListHandles(item))
+        {
+            setAttrByName.Invoke(handle, "keychain slot 0 id", UIntToFloat(keychain.Id));
+            setAttrByName.Invoke(handle, "keychain slot 0 offset x", keychain.OffsetX);
+            setAttrByName.Invoke(handle, "keychain slot 0 offset y", keychain.OffsetY);
+            setAttrByName.Invoke(handle, "keychain slot 0 offset z", keychain.OffsetZ);
+            // "keychain slot 0 seed" is an integer attribute like the charm id,
+            // so the bits are reinterpreted rather than converted. A plain
+            // (float)seed makes the client read a huge pattern value.
+            if (keychain.Seed > 0)
+                setAttrByName.Invoke(handle, "keychain slot 0 seed", UIntToFloat((uint)keychain.Seed));
+        }
     }
 
     /// <summary>
-    /// Apply a paint kit (plus optional nametag / StatTrak) to a weapon.
-    /// Single implementation shared by the GiveNamedItem hook and the
+    /// Apply a paint kit, plus any stickers, charm, nametag and StatTrak, to a
+    /// weapon. Single implementation shared by the GiveNamedItem hook and the
     /// respawn re-apply pass in the plugin.
+    ///
+    /// Order matters. The client composites one finish per item and caches it,
+    /// so every attribute has to be in place before the state changes that make
+    /// it rebuild: paint and attachments first, then SetStateChanged, then the
+    /// mesh group last (matching Nereziel/cs2-WeaponPaints). A rebuild that
+    /// runs between the paint write and the attachment writes caches a finish
+    /// without the charm, which then never appears.
     /// </summary>
     public static void ApplySkinToWeapon(
         CEconEntity weapon,
@@ -150,6 +169,8 @@ public static class WeaponService
         uint accountId = 0,
         string? nametag = null,
         StatTrakInfo? statTrak = null,
+        List<StickerInfo>? stickers = null,
+        KeychainInfo? keychain = null,
         ILogger? logger = null)
     {
         try
@@ -166,22 +187,12 @@ public static class WeaponService
             weapon.FallbackSeed = seed;
             weapon.FallbackWear = wear;
 
-            // Mark fallback netvars dirty so they are (re)sent to clients.
-            // Without this, whether the client sees the skin depends on whether the
-            // initial entity snapshot happened to include these values — which is
-            // why skins would intermittently render as the default texture even
-            // though the inspect description showed the custom skin.
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
-            Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
-
-            setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture prefab", paintKit);
-            setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture seed", (float)seed);
-            setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "set item texture wear", wear);
-
-            setAttrByName.Invoke(item.AttributeList.Handle, "set item texture prefab", paintKit);
-            setAttrByName.Invoke(item.AttributeList.Handle, "set item texture seed", (float)seed);
-            setAttrByName.Invoke(item.AttributeList.Handle, "set item texture wear", wear);
+            foreach (var handle in AttributeListHandles(item))
+            {
+                setAttrByName.Invoke(handle, "set item texture prefab", paintKit);
+                setAttrByName.Invoke(handle, "set item texture seed", (float)seed);
+                setAttrByName.Invoke(handle, "set item texture wear", wear);
+            }
 
             // Apply nametag
             if (!string.IsNullOrEmpty(nametag))
@@ -199,10 +210,11 @@ public static class WeaponService
                 item.EntityQuality = 9; // StatTrak quality
                 weapon.FallbackStatTrak = (int)count;
                 Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
-                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater", UIntToFloat(count));
-                setAttrByName.Invoke(item.NetworkedDynamicAttributes.Handle, "kill eater score type", UIntToFloat(0));
-                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater", UIntToFloat(count));
-                setAttrByName.Invoke(item.AttributeList.Handle, "kill eater score type", UIntToFloat(0));
+                foreach (var handle in AttributeListHandles(item))
+                {
+                    setAttrByName.Invoke(handle, "kill eater", UIntToFloat(count));
+                    setAttrByName.Invoke(handle, "kill eater score type", UIntToFloat(0));
+                }
             }
             else
             {
@@ -211,6 +223,17 @@ public static class WeaponService
                 item.EntityQuality = 0;
             }
 
+            if (stickers != null) ApplyStickers(item, stickers, setAttrByName);
+            if (keychain != null) ApplyKeychain(item, keychain, setAttrByName);
+
+            // Mark fallback netvars dirty so they are (re)sent to clients.
+            // Without this, whether the client sees the skin depends on whether the
+            // initial entity snapshot happened to include these values. That is why
+            // skins would intermittently render as the default texture even though
+            // the inspect description showed the custom skin.
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
+            Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
             Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
 
             bool isLegacy = legacyPaints.Contains((defIndex, paintKit));

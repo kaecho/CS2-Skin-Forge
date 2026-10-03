@@ -1,41 +1,34 @@
-# CS2-Skin-Mod v1.8.3
+# CS2-Skin-Mod v1.8.4
 
 A local-only skin customization plugin for Counter-Strike 2.
 
-## What's New in v1.8.3
+## What's New in v1.8.4
 
-### Fixed: weapon skins, gloves and knife paints stopped applying
-The September 2026 CS2 update moved `CAttributeList::SetOrAddAttributeValueByName`, the engine function every paint, sticker and keychain write goes through. The plugin still carried the old byte signature, so the resolved function pointer was null and each call was rejected at runtime. Knife models kept changing (the model swap runs before the paint) while gun skins and gloves silently did nothing.
+### Fixed: a charm on a weapon could stop the skin from rendering
+Applying a keychain (charm) wrote its attributes in a second pass, after the plugin had already told the client the item changed. The client composites one finish per item and caches it, so the finish it built at that moment was reused and the later charm data was ignored.
 
-- Updated the signature and kept the previous one as a fallback, so servers that have not updated yet keep working
-- The signature is now validated at load: a null handle disables the skin paths instead of invoking a null pointer, and the server log says exactly what happened
-- `skin_menu` reports whether the attribute setter resolved
-- Knife paint failures are logged instead of being swallowed
+- Paint, stickers and the charm now go into the same pass, into both attribute lists, and the client is only notified once everything is in place. The mesh group is set last, matching Nereziel/cs2-WeaponPaints
+- `keychain slot 0 seed` is now written as raw integer bits. It used to be converted to a plain float, which made the client read a garbage pattern value
+- StatTrak quality is cleared on weapons without StatTrak
 
-### Fixed: first run on a new machine
-- **Auto Detect** now searches every drive letter, custom library folders such as `D:\Games\SteamLibrary`, and each library registered in `libraryfolders.vdf`
-- When detection finds nothing, the settings dialog says so and lists the locations it checked, instead of appearing to do nothing
-- The CS2 path is saved before deploying, so a freshly detected or typed path works without a separate save
-- Deploy rejects a path that is not a CS2 install with a readable error instead of creating an empty folder tree somewhere unrelated
-- Plugin status shows "CS2 path not set" instead of three missing files when no path is configured
+### Fixed: charms and stickers on a weapon with no skin
+A charm, sticker, nametag or StatTrak counter on a weapon with no skin selected was never applied, because the plugin skipped weapons without a paint kit. Those weapons are now painted with kit 0 (the stock finish) so the attachment renders.
 
-### Data sync
-- **+673 stickers**: the full IEM Cologne 2026 set, the Auto Racing collection, and the Fruits And Veggies collection
-- **+8 music kits** (Beartooth, Blitz Kids, Hundredth, Neck Deep, Roam, Twin Atlantic, Skog, Starjunk 95), with names in all six panel languages
-- Random music now also includes kit 104
-- `scripts/sync_csgo_api.py` regenerates the sticker and music kit data from the ByMykel CSGO-API, so the next sync is one command
+### New: clear all loadout data
+Settings has a "Clear all loadout data" button that wipes every saved weapon skin, knife, glove, agent, music kit, sticker and charm for all slots, with a confirmation step. Items left unset fall back to the plugin's random defaults.
 
-### Dependencies
-- CounterStrikeSharp.API 1.0.313 to 1.0.365
-- Tauri API, CLI and plugins to the current 2.x releases
-- Rust crates `dirs` and `zip` to their current majors
+### Changed: CS2 folder detection
+Modelled on the folder picker in [CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver):
 
-The plugin still targets .NET 8, which loads on both older CounterStrikeSharp hosts and the .NET 10 runtime that CounterStrikeSharp 1.0.370 and later ship.
+- Every detected installation is listed and can be clicked to select it, instead of only the first one being offered
+- A Browse button opens the native folder picker for installs detection cannot find
+- The dialog distinguishes "no Steam library on this machine" from "Steam found, no CS2 installed", and lists the checked locations
+- A folder that is not a CS2 install is rejected with a readable error, and a configured path that no longer exists is ignored in favour of a detected one
 
 ## Installation
 
 1. Download and install the panel app for your platform
-2. Launch the panel, set your CS2 path in Settings (Auto Detect should find it)
+2. Launch the panel, set your CS2 path in Settings (the detected installs are listed)
 3. Click "Deploy Addons" to install the plugin to your CS2 directory
 4. Add `-insecure` to CS2 launch options
 5. Customize your loadout and click "Apply Loadout"
@@ -48,40 +41,33 @@ See the [README](https://github.com/kaecho/CS2-Skin-Forge/blob/main/README.md) f
 
 # 中文说明
 
-## v1.8.3 更新内容
+## v1.8.4 更新内容
 
-### 修复：枪械皮肤、手套、刀具涂装无法生效
-2026 年 9 月的 CS2 更新移动了 `CAttributeList::SetOrAddAttributeValueByName`，这是所有涂装、贴纸和挂件属性写入所调用的引擎函数。插件仍在使用旧的字节特征码，解析出来的函数指针为空，运行时报错。刀模型仍能更换（换模型在涂装之前执行），但枪皮和手套完全没有反应。
+### 修复：挂饰可能导致枪械皮肤不显示
+挂饰（挂件）的属性原来是在第二遍写入的，此时插件已经通知客户端物品发生变化。客户端会为每个物品合成一份外观并缓存，所以它当时合成的那份被复用，后来的挂饰数据被忽略。
 
-- 已更新特征码，并保留旧特征码作为回退，未更新的服务器同样可用
-- 加载时会校验特征码：句柄为空时禁用皮肤相关逻辑，而不是调用空指针，并在服务器日志中明确说明原因
-- `skin_menu` 会显示属性函数是否解析成功
-- 刀具涂装失败现在会记录日志，不再静默忽略
+- 涂装、贴纸、挂饰现在在同一次写入中完成，并且同时写入两个 attribute list，全部就绪后才通知客户端；网格组放在最后设置，与 Nereziel/cs2-WeaponPaints 一致
+- `keychain slot 0 seed` 改为写入原始整型位。以前按普通浮点写入，客户端会读到错误的图案值
+- 未启用 StatTrak 的武器会清除 StatTrak 品质
 
-### 修复：新电脑首次部署
-- **自动检测** 现在会扫描所有盘符、自定义库目录（如 `D:\Games\SteamLibrary`）以及 `libraryfolders.vdf` 中登记的每个库
-- 检测失败时设置面板会给出提示并列出已检查的位置，不再毫无反应
-- 部署前会先保存 CS2 路径，刚检测到或手动输入的路径无需再单独保存
-- 路径不是 CS2 安装目录时会直接报错，不再在错误位置创建空目录
-- 未配置路径时，插件状态显示「未设置 CS2 路径」，而不是三个缺失文件
+### 修复：没有皮肤的武器上的挂饰与贴纸
+未选择皮肤的武器以前会被插件直接跳过，导致其挂饰、贴纸、改名标签或 StatTrak 计数器完全不生效。现在这类武器会以涂装 0（原厂外观）写入，挂饰可以正常显示。
 
-### 数据同步
-- **+673 张贴纸**：IEM Cologne 2026 全套、赛车系列、果蔬系列
-- **+8 个音乐盒**（Beartooth、Blitz Kids、Hundredth、Neck Deep、Roam、Twin Atlantic、Skog、Starjunk 95），并补齐六种语言的名称
-- 随机音乐池加入音乐盒 104
-- 新增 `scripts/sync_csgo_api.py`，一条命令即可从 ByMykel CSGO-API 重新生成贴纸与音乐盒数据
+### 新增：一键清除所有装备数据
+设置中新增「清除所有装备数据」按钮，带二次确认，可清空所有槽位的武器皮肤、刀具、手套、探员、音乐盒、贴纸和挂饰。未设置的项目会回退为插件默认的随机选择。
 
-### 依赖更新
-- CounterStrikeSharp.API 1.0.313 升级至 1.0.365
-- Tauri API、CLI 及插件升级至当前 2.x 版本
-- Rust 依赖 `dirs`、`zip` 升级至当前主版本
+### 改进：CS2 目录检测
+参考 [CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver) 的目录选择方式：
 
-插件仍以 .NET 8 为目标，既可在旧版 CounterStrikeSharp 上加载，也可运行在 CounterStrikeSharp 1.0.370 及之后版本的 .NET 10 运行时上。
+- 列出所有检测到的安装位置，可直接点击选择，不再只提供第一个
+- 新增「浏览」按钮，用系统文件夹选择器指定检测不到的安装
+- 明确区分「本机没有 Steam 库」和「有 Steam 但没有安装 CS2」，并列出已检查的位置
+- 不是 CS2 安装目录的路径会被拒绝并给出可读的错误提示；已配置但已不存在的路径会被忽略，改用检测到的安装
 
 ## 安装
 
 1. 下载并安装对应平台的面板应用
-2. 启动面板，在设置中配置 CS2 路径（自动检测通常可以直接找到）
+2. 启动面板，在设置中确认 CS2 路径（检测到的安装会直接列出）
 3. 点击「部署插件」安装到 CS2 目录
 4. 在 CS2 启动项中加入 `-insecure`
 5. 配置装备后点击「应用装备」即可

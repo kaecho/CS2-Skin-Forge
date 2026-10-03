@@ -291,6 +291,10 @@ function App() {
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         onConfigSaved={setConfig}
+        onLoadoutCleared={() => {
+          // The saved data is gone, so the editor must not keep showing it.
+          setLoadout({ ...defaultLoadout });
+        }}
       />
       <AboutDialog
         isOpen={showAbout}

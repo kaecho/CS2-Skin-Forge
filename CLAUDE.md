@@ -122,6 +122,36 @@ For knives, gloves, and agents:
 - **Gloves**: Applied on player spawn via `OnEntitySpawned`
 - **Agents**: Replaced via entity index manipulation on spawn
 
+#### Attribute application order (weapons, stickers, charms)
+
+`WeaponService.ApplySkinToWeapon` writes everything for a weapon in one pass and
+then signals the client once:
+
+1. clear both attribute lists, assign a fresh item id, set the fallback netvars
+2. paint, seed and wear into **both** lists
+3. nametag and StatTrak (`kill eater` as raw int bits)
+4. stickers and charm, also into **both** lists
+5. `SetStateChanged` for the fallback netvars and `m_AttributeManager`
+6. `SetBodygroup` (legacy vs new model) last
+
+Two rules matter and both come from working reference implementations
+(`Nereziel/cs2-WeaponPaints`, `Ayrton09/AstraSkins`):
+
+- Every attribute goes into `NetworkedDynamicAttributes` **and** `AttributeList`.
+  An attachment present in only one list makes the client fall back to the stock
+  finish for the whole item, which reads as "the skin stopped working".
+- The mesh group and the state-change notifications come **after** all attribute
+  writes. The client composites one finish per item and caches it, so a rebuild
+  that runs before the charm write caches a finish without it.
+
+Integer-valued attributes (`kill eater`, `sticker slot N id`, `keychain slot 0
+id`, `keychain slot 0 seed`) must be written with the raw bits
+(`BitConverter.Int32BitsToSingle`); `set item texture prefab`, `set item texture
+seed` and the offsets are plain floats.
+
+A weapon with a charm, sticker, nametag or StatTrak counter but no selected skin
+is painted with kit 0 (the stock finish) so the attachment still renders.
+
 ### Localization (i18n)
 
 Frontend supports 6 languages via `src/i18n/` directory:

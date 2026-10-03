@@ -18,7 +18,7 @@ namespace PlayerSkinMod;
 public class PlayerSkinModPlugin : BasePlugin
 {
     public override string ModuleName        => "PlayerSkinMod";
-    public override string ModuleVersion     => "1.8.3";
+    public override string ModuleVersion     => "1.8.4";
     public override string ModuleAuthor      => "CS2-Skin-local-mod";
     public override string ModuleDescription => "Allow players to customize weapon skins, knives, gloves, agent models, music kits locally";
 
@@ -515,6 +515,18 @@ public class PlayerSkinModPlugin : BasePlugin
         var seeds = isCT ? loadout.WeaponSeedsCt : loadout.WeaponSeedsT;
         var wears = isCT ? loadout.WeaponWearsCt : loadout.WeaponWearsT;
 
+        // Attachments are independent of the skin: a charm or sticker can be
+        // set on a weapon with no paint, and the client renders them on the
+        // stock finish.
+        string? nametag = loadout.WeaponNametags.TryGetValue(defIndex, out string? nt) ? nt : null;
+        StatTrakInfo? statTrak = loadout.WeaponStatTrak.TryGetValue(defIndex, out StatTrakInfo? st) ? st : null;
+        List<StickerInfo>? stickers = loadout.WeaponStickers.TryGetValue(defIndex, out var stickerList) ? stickerList : null;
+        KeychainInfo? keychain = loadout.WeaponKeychains.TryGetValue(defIndex, out var charm) ? charm : null;
+        bool hasAttachments = (stickers != null && stickers.Count > 0)
+            || (keychain != null && keychain.Id > 0)
+            || !string.IsNullOrEmpty(nametag)
+            || (statTrak != null && statTrak.Enabled);
+
         int paint;
         if (paints.TryGetValue(defIndex, out int selectedPaint))
         {
@@ -529,6 +541,12 @@ public class PlayerSkinModPlugin : BasePlugin
                 _playerGunPaints[key] = paint;
             }
         }
+        else if (hasAttachments)
+        {
+            // Paint kit 0 is the stock finish; the client still composites the
+            // charm, stickers, nametag and counter onto it.
+            paint = 0;
+        }
         else
         {
             return;
@@ -537,23 +555,13 @@ public class PlayerSkinModPlugin : BasePlugin
         int seed = seeds.TryGetValue(defIndex, out int s) ? s : 0;
         float wear = wears.TryGetValue(defIndex, out float w) ? w : 0.01f;
 
-        // Get nametag and stattrak if configured
-        string? nametag = loadout.WeaponNametags.TryGetValue(defIndex, out string? nt) ? nt : null;
-        StatTrakInfo? statTrak = loadout.WeaponStatTrak.TryGetValue(defIndex, out StatTrakInfo? st) ? st : null;
-
-        // All skin/sticker/keychain application lives in WeaponService — the
-        // plugin only decides WHAT to apply, the service knows HOW.
+        // All skin/sticker/keychain application lives in WeaponService: the
+        // plugin only decides WHAT to apply, the service knows HOW. Everything
+        // goes through one call so the paint and the attachments reach the
+        // client in the same rebuild.
         WeaponService.ApplySkinToWeapon(
             weapon, defIndex, paint, _legacyPaints, _setAttrByName,
-            seed, wear, (uint)steamId, nametag, statTrak, Logger);
-
-        // Apply stickers if configured
-        if (loadout.WeaponStickers.TryGetValue(defIndex, out var stickers) && stickers.Count > 0)
-            WeaponService.ApplyStickers(weapon, stickers, _setAttrByName);
-
-        // Apply keychain if configured
-        if (loadout.WeaponKeychains.TryGetValue(defIndex, out var keychain))
-            WeaponService.ApplyKeychains(weapon, keychain, _setAttrByName);
+            seed, wear, (uint)steamId, nametag, statTrak, stickers, keychain, Logger);
     }
 
     [GameEventHandler]

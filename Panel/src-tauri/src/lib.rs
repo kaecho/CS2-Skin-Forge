@@ -32,16 +32,9 @@ pub struct PluginCheckResult {
 
 /// Read the CS2 path from config and return the PlayerSkinMod plugin directory.
 fn get_plugin_dir_from_config() -> Result<PathBuf, String> {
-    let config_path = get_config_path();
-    if !config_path.exists() {
-        return Err("CS2 path not configured. Please set it in Settings.".to_string());
-    }
-    let data = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-    let config: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-    let cs2_path = config
-        .cs2_path
-        .ok_or_else(|| "CS2 path not configured.".to_string())?;
-    Ok(PathBuf::from(&cs2_path)
+    let cs2_path = configured_cs2_path()
+        .ok_or_else(|| "CS2 path not configured. Please set it in Settings.".to_string())?;
+    Ok(cs2_path
         .join("addons")
         .join("counterstrikesharp")
         .join("plugins")
@@ -452,12 +445,18 @@ fn parse_library_folders(vdf_path: &Path) -> Vec<PathBuf> {
     libs
 }
 
+/// What the settings dialog needs to show the CS2 folder: every install found,
+/// the effective selection, and enough context to explain an empty list.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DetectResult {
-    pub path: Option<String>,
-    /// Every location that was checked, so a failed detection can explain
-    /// itself instead of leaving the user with a button that does nothing.
+pub struct DirectoryInfo {
+    pub candidates: Vec<String>,
+    pub selected: Option<String>,
+    pub valid: bool,
+    pub needs_choice: bool,
+    /// False when no Steam library exists at all, which is a different problem
+    /// from Steam being installed without CS2.
+    pub steam_found: bool,
     pub searched: Vec<String>,
 }
 
@@ -471,33 +470,123 @@ fn cs2_dir_in(library: &Path) -> PathBuf {
         .join("csgo")
 }
 
-/// First library that actually holds a CS2 install, plus every location that
+/// Every library that actually holds a CS2 install, plus every location that
 /// was checked so a failed detection can explain itself.
-fn find_cs2(libraries: &[PathBuf]) -> (Option<PathBuf>, Vec<String>) {
+fn find_cs2(libraries: &[PathBuf]) -> (Vec<PathBuf>, Vec<String>) {
+    let mut candidates: Vec<PathBuf> = Vec::new();
     let mut searched: Vec<String> = Vec::new();
 
     for library in libraries {
         let cs2 = cs2_dir_in(library);
-        let display = cs2.to_string_lossy().to_string();
-        searched.push(display);
-        if cs2.is_dir() {
-            return (Some(cs2), searched);
+        searched.push(cs2.to_string_lossy().to_string());
+        if validate_cs2_path(&cs2).is_ok() && !candidates.iter().any(|c| *c == cs2) {
+            candidates.push(cs2);
         }
     }
 
-    (None, searched)
+    (candidates, searched)
+}
+
+/// The CS2 path saved in the config, if any.
+fn configured_cs2_path() -> Option<PathBuf> {
+    let data = fs::read_to_string(get_config_path()).ok()?;
+    let config: AppConfig = serde_json::from_str(&data).ok()?;
+    config.cs2_path.map(PathBuf::from)
+}
+
+/// Shape the detection result the way the settings dialog wants it: every
+/// candidate, the effective selection, and enough context to explain an empty
+/// list. A configured path that still validates always wins, so reopening
+/// settings never silently switches installs.
+fn directory_info(
+    configured: Option<PathBuf>,
+    candidates: Vec<PathBuf>,
+    steam_found: bool,
+    searched: Vec<String>,
+) -> DirectoryInfo {
+    let configured_valid = configured.filter(|path| validate_cs2_path(path).is_ok());
+
+    let selected = match (&configured_valid, candidates.len()) {
+        (Some(path), _) => Some(path.clone()),
+        (None, 1) => Some(candidates[0].clone()),
+        _ => None,
+    };
+
+    let selected = selected.map(|path| path.to_string_lossy().to_string());
+    let valid = selected
+        .as_deref()
+        .map_or(false, |path| validate_cs2_path(Path::new(path)).is_ok());
+
+    DirectoryInfo {
+        candidates: candidates
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect(),
+        selected,
+        valid,
+        needs_choice: configured_valid.is_none() && candidates.len() > 1,
+        steam_found,
+        searched,
+    }
 }
 
 #[tauri::command]
-fn detect_cs2_path() -> Result<DetectResult, String> {
-    let (path, mut searched) = find_cs2(&steam_libraries());
+fn detect_cs2_path() -> Result<DirectoryInfo, String> {
+    let libraries = steam_libraries();
+    let (mut candidates, mut searched) = find_cs2(&libraries);
+    let configured = configured_cs2_path();
+
+    // A manually typed install is not in any Steam library, but it should still
+    // show up in the list next to the detected ones.
+    if let Some(path) = &configured {
+        if path.is_dir() && !candidates.iter().any(|c| c == path) {
+            candidates.push(path.clone());
+        }
+    }
 
     // Keep the report readable when a machine has many Steam libraries.
     searched.truncate(20);
-    Ok(DetectResult {
-        path: path.map(|p| p.to_string_lossy().to_string()),
-        searched,
-    })
+    Ok(directory_info(configured, candidates, !libraries.is_empty(), searched))
+}
+
+#[tauri::command]
+fn select_cs2_path(path: String) -> Result<DirectoryInfo, String> {
+    let candidate = PathBuf::from(&path);
+    validate_cs2_path(&candidate)?;
+
+    let mut info = detect_cs2_path()?;
+    let display = candidate.to_string_lossy().to_string();
+    if !info.candidates.contains(&display) {
+        info.candidates.push(display.clone());
+    }
+    info.selected = Some(display);
+    info.valid = true;
+    info.needs_choice = false;
+    Ok(info)
+}
+
+/// Drop every saved loadout. The plugin watches the file for changes and does
+/// not watch for deletes, so the file is emptied instead of removed: otherwise
+/// the running server keeps applying the loadout it already read.
+#[tauri::command]
+fn reset_loadouts() -> Result<u32, String> {
+    let loadout_path = get_loadout_path_from_config()
+        .ok_or_else(|| "CS2 path not configured. Please set it in Settings.".to_string())?;
+
+    let cleared = fs::read_to_string(&loadout_path)
+        .ok()
+        .and_then(|data| {
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&data).ok()
+        })
+        .map(|loadouts| loadouts.len() as u32)
+        .unwrap_or(0);
+
+    if let Some(parent) = loadout_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&loadout_path, "{}").map_err(|e| e.to_string())?;
+
+    Ok(cleared)
 }
 
 #[tauri::command]
@@ -770,7 +859,7 @@ mod tests {
     }
 
     fn make_cs2_install(library: &Path) {
-        fs::create_dir_all(cs2_dir_in(library)).unwrap();
+        write_file(&cs2_dir_in(library).join("gameinfo.gi"));
     }
 
     #[test]
@@ -807,8 +896,8 @@ mod tests {
         fs::create_dir_all(&empty).unwrap();
         make_cs2_install(&game);
 
-        let (found, searched) = find_cs2(&[empty.clone(), game.clone()]);
-        assert_eq!(found, Some(cs2_dir_in(&game)));
+        let (candidates, searched) = find_cs2(&[empty.clone(), game.clone()]);
+        assert_eq!(candidates, vec![cs2_dir_in(&game)]);
         assert_eq!(searched.len(), 2, "both libraries should be reported");
     }
 
@@ -820,8 +909,8 @@ mod tests {
         fs::create_dir_all(&a).unwrap();
         fs::create_dir_all(&b).unwrap();
 
-        let (found, searched) = find_cs2(&[a.clone(), b.clone()]);
-        assert!(found.is_none());
+        let (candidates, searched) = find_cs2(&[a.clone(), b.clone()]);
+        assert!(candidates.is_empty());
         assert_eq!(
             searched,
             vec![
@@ -829,6 +918,84 @@ mod tests {
                 cs2_dir_in(&b).to_string_lossy().to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn collects_every_install_when_several_exist() {
+        let scratch = Scratch::new("multi");
+        let first = scratch.path().join("first");
+        let second = scratch.path().join("second");
+        make_cs2_install(&first);
+        make_cs2_install(&second);
+
+        let (candidates, _) = find_cs2(&[first.clone(), second.clone()]);
+        assert_eq!(candidates, vec![cs2_dir_in(&first), cs2_dir_in(&second)]);
+    }
+
+    #[test]
+    fn single_install_is_selected_automatically() {
+        let scratch = Scratch::new("auto-select");
+        let only = scratch.path().join("only");
+        make_cs2_install(&only);
+
+        let info = directory_info(None, vec![cs2_dir_in(&only)], true, Vec::new());
+        assert!(info.valid);
+        assert!(!info.needs_choice);
+        assert_eq!(info.selected, Some(cs2_dir_in(&only).to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn several_installs_without_a_configured_path_need_a_choice() {
+        let scratch = Scratch::new("choose");
+        let first = scratch.path().join("first");
+        let second = scratch.path().join("second");
+        make_cs2_install(&first);
+        make_cs2_install(&second);
+
+        let info = directory_info(
+            None,
+            vec![cs2_dir_in(&first), cs2_dir_in(&second)],
+            true,
+            Vec::new(),
+        );
+        assert!(!info.valid);
+        assert!(info.needs_choice);
+        assert_eq!(info.selected, None);
+    }
+
+    #[test]
+    fn a_valid_configured_path_wins_over_detection() {
+        let scratch = Scratch::new("configured");
+        let detected = scratch.path().join("detected");
+        let chosen = scratch.path().join("chosen");
+        make_cs2_install(&detected);
+        make_cs2_install(&chosen);
+
+        let info = directory_info(
+            Some(cs2_dir_in(&chosen)),
+            vec![cs2_dir_in(&detected), cs2_dir_in(&chosen)],
+            true,
+            Vec::new(),
+        );
+        assert!(info.valid);
+        assert!(!info.needs_choice);
+        assert_eq!(info.selected, Some(cs2_dir_in(&chosen).to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn a_stale_configured_path_is_ignored() {
+        let scratch = Scratch::new("stale");
+        let detected = scratch.path().join("detected");
+        make_cs2_install(&detected);
+        let stale = scratch.path().join("deleted-install");
+
+        let info = directory_info(
+            Some(stale),
+            vec![cs2_dir_in(&detected)],
+            true,
+            Vec::new(),
+        );
+        assert_eq!(info.selected, Some(cs2_dir_in(&detected).to_string_lossy().to_string()));
     }
 
     #[test]
@@ -864,7 +1031,9 @@ pub fn run() {
             save_config,
             save_loadout,
             load_loadout,
+            reset_loadouts,
             detect_cs2_path,
+            select_cs2_path,
             check_plugin_files,
             deploy_addons,
             check_update

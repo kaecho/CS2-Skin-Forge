@@ -19,7 +19,11 @@ export interface PluginCheckResult {
 }
 
 export interface DetectResult {
-  path: string | null;
+  candidates: string[];
+  selected: string | null;
+  valid: boolean;
+  needsChoice: boolean;
+  steamFound: boolean;
   searched: string[];
 }
 
@@ -39,6 +43,8 @@ export const api = {
   loadLoadout: (slot: number) =>
     invoke<Loadout | null>("load_loadout", { slot }),
   detectCs2Path: () => invoke<DetectResult>("detect_cs2_path"),
+  selectCs2Path: (path: string) => invoke<DetectResult>("select_cs2_path", { path }),
+  resetLoadouts: () => invoke<number>("reset_loadouts"),
   checkPluginFiles: () => invoke<PluginCheckResult>("check_plugin_files"),
   deployAddons: () => invoke<string>("deploy_addons"),
   checkUpdate: () => invoke<UpdateCheckResult>("check_update"),
